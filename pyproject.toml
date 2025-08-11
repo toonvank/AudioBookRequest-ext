@@ -9,6 +9,7 @@ dependencies = [
     "alembic",
     "argon2-cffi",
     "argon2-cffi-bindings",
+    "bencodepy",
     "fastapi[standard]",
     "itsdangerous",
     "jinja2",
