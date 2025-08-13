@@ -104,7 +104,9 @@ Suggestions are always welcome. Do note though that a big goal is to keep this p
 
 ## Local Development
 
-Virtual environments help isolate any installed packages to this directory. Project was made with `Python 3.12` and uses new generics introduced in 3.12. Older python versions might not work or could have incorrect typing.
+**NOTE**: If you use VSCode, you can also open up the project with the given dev container settings and then follow the instructions below to get everything set up correctly. 
+
+Python virtual environments help isolate any installed packages to this directory. Project was made with `Python 3.12` and uses new generics introduced in 3.12. Older python versions might not work or could have incorrect typing.
 
 For improved dependency management, `uv` is used instead of `pip`.
 
