@@ -1,15 +1,23 @@
-from math import inf
+import secrets
 import time
+from datetime import datetime
+from math import inf
 from typing import Annotated, Optional
 
+import pydantic
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBasic, OAuth2PasswordBearer, OpenIdConnect
+from fastapi.security import (
+    HTTPBasic,
+    HTTPBearer,
+    OpenIdConnect,
+)
+from fastapi.security.base import SecurityBase
 from sqlmodel import Session, select
 
 from app.internal.auth.config import LoginTypeEnum, auth_config
-from app.internal.models import GroupEnum, User
+from app.internal.models import APIKey, GroupEnum, User
 from app.util.db import get_session
 from app.util.log import logger
 
@@ -81,6 +89,90 @@ def create_user(
     return User(username=username, password=password_hash, group=group, root=root)
 
 
+def generate_api_key() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def create_api_key(
+    user: User,
+    name: str,
+) -> tuple[APIKey, str]:
+    private_key = generate_api_key()
+    key_hash = ph.hash(private_key)
+    api_key = APIKey(
+        user_username=user.username,
+        name=name,
+        key_hash=key_hash,
+    )
+    return api_key, private_key
+
+
+def _authenticate_api_key(session: Session, key: str) -> Optional[User]:
+    api_keys = session.exec(select(APIKey)).all()
+
+    for api_key in api_keys:
+        try:
+            ph.verify(api_key.key_hash, key)
+        except VerifyMismatchError:
+            continue
+
+        user = session.get(User, api_key.user_username)
+        if not user:
+            logger.error(
+                f"API key {api_key.id} references non-existent user {api_key.user_username}"
+            )
+            continue
+
+        api_key.last_used = datetime.now()
+        session.add(api_key)
+        session.commit()
+
+        return user
+
+    return None
+
+
+class APIKeyAuth(SecurityBase):
+    def __init__(
+        self,
+        lowest_allowed_group: GroupEnum = GroupEnum.untrusted,
+        auto_error: bool = True,
+    ):
+        self.auto_error = auto_error
+        self.api_key_header = HTTPBearer(auto_error=auto_error)
+        self.model = self.api_key_header.model
+        self.scheme_name = lowest_allowed_group.capitalize() + " API Key"
+        self.lowest_allowed_group = lowest_allowed_group
+
+    async def __call__(
+        self, request: Request, session: Annotated[Session, Depends(get_session)]
+    ) -> Optional[DetailedUser]:
+        api_key = await self.api_key_header(request)
+        if api_key is None:
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key"
+                )
+            return None
+        user = _authenticate_api_key(session, api_key.credentials)
+        if user is None:
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
+                )
+            return None
+        if not user.is_above(self.lowest_allowed_group):
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+                )
+            return None
+        user = DetailedUser.model_validate(
+            user, update={"login_type": LoginTypeEnum.api_key}
+        )
+        return user
+
+
 class RequiresLoginException(Exception):
     def __init__(self, detail: Optional[str] = None, **kwargs: object):
         super().__init__(**kwargs)
@@ -113,7 +205,19 @@ class ABRAuth:
                     status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
                 )
 
-            user = DetailedUser.model_validate(user, update={"login_type": login_type})
+            try:
+                user = DetailedUser.model_validate(
+                    user, update={"login_type": login_type}
+                )
+            except pydantic.ValidationError as e:
+                logger.error(
+                    "Failed to validate user model",
+                    exc_info=e,
+                    user=user,
+                )
+                raise RequiresLoginException(
+                    "Failed to validate user model. Please log in again."
+                )
 
             return user
 
@@ -177,7 +281,6 @@ class ABRAuth:
 
 security = HTTPBasic()
 ph = PasswordHasher()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 abr_authentication = ABRAuth()
 
 
