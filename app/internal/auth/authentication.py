@@ -1,14 +1,19 @@
-from math import inf
 import secrets
 import time
 from datetime import datetime
+from math import inf
 from typing import Annotated, Optional
 
+import pydantic
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPBasic, HTTPBearer, OAuth2PasswordBearer, OpenIdConnect
-import pydantic
+from fastapi.security import (
+    HTTPBasic,
+    HTTPBearer,
+    OpenIdConnect,
+)
+from fastapi.security.base import SecurityBase
 from sqlmodel import Session, select
 
 from app.internal.auth.config import LoginTypeEnum, auth_config
@@ -102,7 +107,7 @@ def create_api_key(
     return api_key, private_key
 
 
-def authenticate_api_key(session: Session, key: str) -> Optional[User]:
+def _authenticate_api_key(session: Session, key: str) -> Optional[User]:
     api_keys = session.exec(select(APIKey)).all()
 
     for api_key in api_keys:
@@ -125,6 +130,47 @@ def authenticate_api_key(session: Session, key: str) -> Optional[User]:
         return user
 
     return None
+
+
+class APIKeyAuth(SecurityBase):
+    def __init__(
+        self,
+        lowest_allowed_group: GroupEnum = GroupEnum.untrusted,
+        auto_error: bool = True,
+    ):
+        self.auto_error = auto_error
+        self.api_key_header = HTTPBearer(auto_error=auto_error)
+        self.model = self.api_key_header.model
+        self.scheme_name = lowest_allowed_group.capitalize() + " API Key"
+        self.lowest_allowed_group = lowest_allowed_group
+
+    async def __call__(
+        self, request: Request, session: Annotated[Session, Depends(get_session)]
+    ) -> Optional[DetailedUser]:
+        api_key = await self.api_key_header(request)
+        if api_key is None:
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key"
+                )
+            return None
+        user = _authenticate_api_key(session, api_key.credentials)
+        if user is None:
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
+                )
+            return None
+        if not user.is_above(self.lowest_allowed_group):
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
+                )
+            return None
+        user = DetailedUser.model_validate(
+            user, update={"login_type": LoginTypeEnum.api_key}
+        )
+        return user
 
 
 class RequiresLoginException(Exception):
@@ -172,27 +218,6 @@ class ABRAuth:
                 raise RequiresLoginException(
                     "Failed to validate user model. Please log in again."
                 )
-
-            return user
-
-        return get_user
-
-    def get_api_authenticated_user(self, lowest_allowed_group: GroupEnum):
-        async def get_user(
-            request: Request,
-            session: Annotated[Session, Depends(get_session)],
-        ) -> DetailedUser:
-            user = await self._get_api_key_auth(request, session)
-
-            if not user.is_above(lowest_allowed_group):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
-                )
-
-            # We don't need the login_type for api keys
-            user = DetailedUser.model_validate(
-                user, update={"login_type": LoginTypeEnum.basic}
-            )
 
             return user
 
@@ -253,55 +278,11 @@ class ABRAuth:
         ).one()
         return self.none_user
 
-    async def _get_api_key_auth(
-        self,
-        request: Request,
-        session: Session,
-    ) -> User:
-        auth_header = request.headers.get("Authorization")
-        if not auth_header:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing Authorization header",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        try:
-            scheme, token = auth_header.split(" ", 1)
-            if scheme.lower() != "bearer":
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication scheme",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Authorization header format",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        user = authenticate_api_key(session, token)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid API key",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-        return user
-
 
 security = HTTPBasic()
-bearer_security = HTTPBearer()
 ph = PasswordHasher()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 abr_authentication = ABRAuth()
 
 
 def get_authenticated_user(lowest_allowed_group: GroupEnum = GroupEnum.untrusted):
     return abr_authentication.get_authenticated_user(lowest_allowed_group)
-
-
-def get_api_authenticated_user(lowest_allowed_group: GroupEnum = GroupEnum.untrusted):
-    return abr_authentication.get_api_authenticated_user(lowest_allowed_group)

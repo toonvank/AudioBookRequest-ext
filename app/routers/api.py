@@ -1,13 +1,13 @@
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, Security, status
 from pydantic import BaseModel, Field
-from sqlmodel import Session, select, func
+from sqlmodel import Session, func, select
 
 from app.internal.auth.authentication import (
+    APIKeyAuth,
     DetailedUser,
     create_user,
-    get_api_authenticated_user,
     raise_for_invalid_password,
 )
 from app.internal.models import GroupEnum, User
@@ -61,9 +61,7 @@ def health_check():
 @router.get("/users", response_model=UsersListResponse, tags=["Users"])
 def list_users(
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[
-        DetailedUser, Depends(get_api_authenticated_user(GroupEnum.admin))
-    ],
+    current_user: DetailedUser = Security(APIKeyAuth(GroupEnum.admin)),
     limit: int = Query(
         50, ge=1, le=100, description="Maximum number of users to return"
     ),
@@ -86,7 +84,7 @@ def list_users(
 
 @router.get("/users/me", response_model=UserResponse, tags=["Users"])
 def get_current_user(
-    current_user: Annotated[DetailedUser, Depends(get_api_authenticated_user())],
+    current_user: DetailedUser = Security(APIKeyAuth()),
 ):
     """
     Returns information about the user associated with the provided API key.
@@ -100,9 +98,7 @@ def get_current_user(
 def get_user(
     username: str,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[
-        DetailedUser, Depends(get_api_authenticated_user(GroupEnum.admin))
-    ],
+    current_user: DetailedUser = Security(APIKeyAuth(GroupEnum.admin)),
 ):
     """
     Returns detailed information about the specified user.
@@ -128,9 +124,7 @@ def get_user(
 def create_new_user(
     user_data: UserCreate,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[
-        DetailedUser, Depends(get_api_authenticated_user(GroupEnum.admin))
-    ],
+    current_user: DetailedUser = Security(APIKeyAuth(GroupEnum.admin)),
 ):
     """
     Creates a new user with the specified username, password, and group.
@@ -171,9 +165,7 @@ def update_user(
     username: str,
     user_data: UserUpdate,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[
-        DetailedUser, Depends(get_api_authenticated_user(GroupEnum.admin))
-    ],
+    current_user: DetailedUser = Security(APIKeyAuth(GroupEnum.admin)),
 ):
     """
     Updates the specified user's password and/or group.
@@ -221,9 +213,7 @@ def update_user(
 def delete_user(
     username: str,
     session: Annotated[Session, Depends(get_session)],
-    current_user: Annotated[
-        DetailedUser, Depends(get_api_authenticated_user(GroupEnum.admin))
-    ],
+    current_user: DetailedUser = Security(APIKeyAuth(GroupEnum.admin)),
 ):
     """
     Permanently removes the specified user from the system.
