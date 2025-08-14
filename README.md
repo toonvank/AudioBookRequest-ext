@@ -21,6 +21,7 @@ If you've heard of Overseer, Ombi, or Jellyseer; this is in the similar vein, <i
       - [Getting locked out](#getting-locked-out)
     - [Environment Variables](#environment-variables)
 - [Contributing](#contributing)
+  - [Conventional Commits](#conventional-commits)
   - [Local Development](#local-development)
   - [Initialize Database](#initialize-database)
   - [Running](#running)
@@ -102,9 +103,13 @@ In the case of an OIDC misconfiguration, i.e. changing a setting like your clien
 
 Suggestions are always welcome. Do note though that a big goal is to keep this project on a smaller scale. The main focus of this project is to make it easy for friends to request and potentially automatically download Audiobooks without having to give direct access to Readarr/Prowlarr. It might make sense to first create an issue before undertaking a big project and opening a pull request. Your idea could already be worked on in the background.
 
+## Conventional Commits
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org) to allow for a more organized commit history and support automated changelog generation. Pull requests will be squashed in most cases (with some exceptions).
+
 ## Local Development
 
-**NOTE**: If you use VSCode, you can also open up the project with the given dev container settings and then follow the instructions below to get everything set up correctly. 
+**NOTE**: If you use VSCode, you can also open up the project with the given dev container settings and then follow the instructions below to get everything set up correctly.
 
 Python virtual environments help isolate any installed packages to this directory. Project was made with `Python 3.12` and uses new generics introduced in 3.12. Older python versions might not work or could have incorrect typing.
 
