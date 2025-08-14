@@ -27,6 +27,7 @@ dependencies = [
     "python-multipart",
     "requests",
     "structlog",
+    "torf>=4.3.0",
 ]
 
 # setuptools by default expects a "src" folder structure

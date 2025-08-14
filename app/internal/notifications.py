@@ -54,7 +54,7 @@ async def _send(
             headers=notification.headers,
         ) as response:
             response.raise_for_status()
-            return await response.json()
+            return await response.text()
     elif notification.body_type == NotificationBodyTypeEnum.text:
         async with client_session.post(
             notification.url,

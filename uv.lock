@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -177,6 +177,7 @@ dependencies = [
     { name = "sqlmodel" },
     { name = "structlog" },
     { name = "terminaltables" },
+    { name = "torf" },
     { name = "torrent-parser" },
     { name = "typer" },
     { name = "urllib3" },
@@ -210,6 +211,7 @@ requires-dist = [
     { name = "sqlmodel" },
     { name = "structlog" },
     { name = "terminaltables" },
+    { name = "torf", specifier = ">=4.3.0" },
     { name = "torrent-parser" },
     { name = "typer" },
     { name = "urllib3" },
@@ -435,6 +437,12 @@ wheels = [
 standard = [
     { name = "uvicorn", extra = ["standard"] },
 ]
+
+[[package]]
+name = "flatbencode"
+version = "0.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/3d/ed36c2a94bef2ff1b7fc62ba932fa2eb4db3f7ea30c89da01b1c64ecbb8c/flatbencode-0.2.1.tar.gz", hash = "sha256:77397d5d0108835404f6f7cad640d403c7025a11812afc7e1df4b0f92589ba77", size = 3234, upload-time = "2016-10-22T11:12:34.225Z" }
 
 [[package]]
 name = "frozenlist"
@@ -1265,6 +1273,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f5/fc/0b73d782f5ab7feba8d007573a3773c58255f223c5940a7b7085f02153c3/terminaltables-3.1.10.tar.gz", hash = "sha256:ba6eca5cb5ba02bba4c9f4f985af80c54ec3dccf94cfcd190154386255e47543", size = 12264, upload-time = "2021-12-07T19:03:35.758Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/fb/ea621e0a19733e01fe4005d46087d383693c0f4a8f824b47d8d4122c87e0/terminaltables-3.1.10-py2.py3-none-any.whl", hash = "sha256:e4fdc4179c9e4aab5f674d80f09d76fa436b96fdc698a8505e0a36bf0804a874", size = 15155, upload-time = "2021-12-07T19:03:34.013Z" },
+]
+
+[[package]]
+name = "torf"
+version = "4.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flatbencode" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/dd/7c/7c306f85ddcffc09b4bf8f761c3ef5c27030141455cd67ac0dbd849c35d2/torf-4.3.0.tar.gz", hash = "sha256:6d2a87268dbd41ef5039faf11cbf805575fe17c9d1dff2eb0e42fec6879f2eff", size = 107454, upload-time = "2025-02-24T11:19:33.798Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7d/cf/6215eec4ac0ce19f2b48788b27059eb7770c14bf998b315892418738ecbf/torf-4.3.0-py3-none-any.whl", hash = "sha256:57a5bb7f021668370d2a9f4062dbba9dbcf48142297adce87aeaabce5a28be6c", size = 65764, upload-time = "2025-02-24T11:19:32.154Z" },
 ]
 
 [[package]]

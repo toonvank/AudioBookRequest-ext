@@ -56,11 +56,13 @@
       placeholder="{&quot;username&quot;: &quot;admin&quot;, &quot;password&quot;: &quot;password123&quot;}"
       pattern="{{ json_regexp }}" />
 
-    <p class="text-xs opacity-60">
+    <p class="flex flex-col text-xs opacity-60">
       Possible event variables:
-      <span class="font-mono">eventType, eventUser, bookTitle, bookAuthors, bookNarrators</span>
-      <br />
-      Failed download event additionally has:
+      <span class="font-mono">
+        eventType, eventUser, bookTitle, bookAuthors, bookNarrators, bookASIN, torrentInfoHash, 
+        sourceSizeMB, sourceTitle, indexerName, sourceProtocol
+      </span>
+      <span class="mt-1">Failed download event additionally has:</span>
       <span class="font-mono">errorStatus, errorReason</span>
     </p>
     <button type="submit" class="btn">Add</button>

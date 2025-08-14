@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from aiohttp import ClientResponse, ClientSession
 from pydantic import BaseModel
 from sqlmodel import Session
+from torf import BdecodeError, MetainfoError, ReadError, Torrent
 
 from app.internal.indexers.abstract import SessionContainer
 from app.internal.models import (
@@ -99,6 +100,26 @@ def flush_prowlarr_cache():
     prowlarr_indexer_cache.flush()
 
 
+async def _get_torrent_info_hash(
+    client_session: ClientSession, download_url: str
+) -> Optional[str]:
+    logger.debug("Fetching torrent info hash", download_url=download_url)
+    async with client_session.get(download_url) as r:
+        if not r.ok:
+            logger.error("Failed to fetch torrent", download_url=download_url)
+            return None
+        content = await r.read()
+        try:
+            tor = Torrent.read_stream(content)
+            return tor.infohash
+        except (MetainfoError, ReadError, BdecodeError) as e:
+            logger.error(
+                "Error reading torrent info hash",
+                download_url=download_url,
+                error=str(e),
+            )
+
+
 async def start_download(
     session: Session,
     client_session: ClientSession,
@@ -106,6 +127,7 @@ async def start_download(
     indexer_id: int,
     requester_username: str,
     book_asin: str,
+    prowlarr_source: Optional[ProwlarrSource] = None,
 ) -> ClientResponse:
     prowlarr_config.raise_if_invalid(session)
     base_url = prowlarr_config.get_base_url(session)
@@ -114,13 +136,20 @@ async def start_download(
 
     url = posixpath.join(base_url, "api/v1/search")
     logger.debug("Starting download", guid=guid)
+    headers = {"X-Api-Key": api_key}
+
     async with client_session.post(
         url,
         json={"guid": guid, "indexerId": indexer_id},
-        headers={"X-Api-Key": api_key},
+        headers=headers,
     ) as response:
         if not response.ok:
-            logger.error("Failed to start download", guid=guid, response=response)
+            logger.error(
+                "Failed to start download",
+                guid=guid,
+                response=response,
+                text=await response.text(),
+            )
             await send_all_notifications(
                 EventEnum.on_failed_download,
                 requester_username,
@@ -130,11 +159,29 @@ async def start_download(
                     "errorReason": response.reason or "<unknown>",
                 },
             )
-        else:
-            logger.debug("Download successfully started", guid=guid)
-            await send_all_notifications(
-                EventEnum.on_successful_download, requester_username, book_asin
-            )
+            return response
+
+        # Find additional metadata/replacements to pass along notifications
+        additional_replacements: dict[str, str] = {"bookASIN": book_asin}
+        if prowlarr_source:
+            if prowlarr_source.download_url and prowlarr_source.protocol == "torrent":
+                if info_hash := await _get_torrent_info_hash(
+                    client_session, prowlarr_source.download_url
+                ):
+                    additional_replacements["torrentInfoHash"] = info_hash
+
+            additional_replacements["sourceSizeMB"] = str(prowlarr_source.size_MB)
+            additional_replacements["sourceTitle"] = prowlarr_source.title
+            additional_replacements["indexerName"] = prowlarr_source.indexer
+            additional_replacements["sourceProtocol"] = prowlarr_source.protocol
+
+        logger.debug("Download successfully started", guid=guid)
+        await send_all_notifications(
+            EventEnum.on_successful_download,
+            requester_username,
+            book_asin,
+            additional_replacements,
+        )
 
         return response
 
