@@ -89,7 +89,7 @@ async def query_sources(
                 indexer_id=ranked[0].indexer_id,
                 requester_username=requester_username,
                 book_asin=asin,
-                download_url=ranked[0].download_url,
+                prowlarr_source=ranked[0],
             )
             if resp.ok:
                 same_books = session.exec(

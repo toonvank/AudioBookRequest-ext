@@ -9,7 +9,6 @@ dependencies = [
     "alembic",
     "argon2-cffi",
     "argon2-cffi-bindings",
-    "bencodepy",
     "fastapi[standard]",
     "itsdangerous",
     "jinja2",
@@ -28,6 +27,7 @@ dependencies = [
     "python-multipart",
     "requests",
     "structlog",
+    "torf>=4.3.0",
 ]
 
 # setuptools by default expects a "src" folder structure

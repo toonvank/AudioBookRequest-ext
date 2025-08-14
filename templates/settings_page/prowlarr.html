@@ -86,7 +86,7 @@
         <button id="category-submit-button"
                 x-data="{ initial: selected }"
                 x-bind:disabled="JSON.stringify(initial) === JSON.stringify(selected)"
-                class="btn">Save</button>
+                class="btn">Save categories</button>
       </form>
     {% endblock category %}
     {% block indexer %}
@@ -138,7 +138,7 @@
         <button id="indexer-submit-button"
                 x-data="{ initial: selectedIndexers }"
                 x-bind:disabled="JSON.stringify(initial) === JSON.stringify(selectedIndexers)"
-                class="btn">Save</button>
+                class="btn">Save indexers</button>
       </form>
     {% endblock indexer %}
   </div>
