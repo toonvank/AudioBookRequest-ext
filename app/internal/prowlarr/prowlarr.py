@@ -1,3 +1,5 @@
+import hashlib
+import bencodepy
 import json
 import posixpath
 from datetime import datetime
@@ -106,6 +108,7 @@ async def start_download(
     indexer_id: int,
     requester_username: str,
     book_asin: str,
+    download_url: str,
 ) -> ClientResponse:
     prowlarr_config.raise_if_invalid(session)
     base_url = prowlarr_config.get_base_url(session)
@@ -119,6 +122,7 @@ async def start_download(
         json={"guid": guid, "indexerId": indexer_id},
         headers={"X-Api-Key": api_key},
     ) as response:
+        search_results = await response.json()
         if not response.ok:
             logger.error("Failed to start download", guid=guid, response=response)
             await send_all_notifications(
@@ -131,9 +135,19 @@ async def start_download(
                 },
             )
         else:
+            headers = {"X-Api-Key": api_key}
+            async with client_session.get(download_url, headers=headers) as r:
+                r.raise_for_status()
+                content = await r.read()
+                torrent = bencodepy.decode(content)
+                info_hash = hashlib.sha1(bencodepy.encode(torrent[b'info'])).hexdigest()
             logger.debug("Download successfully started", guid=guid)
             await send_all_notifications(
-                EventEnum.on_successful_download, requester_username, book_asin
+                EventEnum.on_successful_download, requester_username, book_asin, 
+                {
+                    "torrentInfoHash": str(info_hash),
+                    "bookASIN": str(book_asin),
+                }
             )
 
         return response
