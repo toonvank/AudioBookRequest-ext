@@ -44,36 +44,12 @@ Authorization: Bearer <your-api-key>
 **Example using cURL:**
 ```bash
 curl -H "Authorization: Bearer your-api-key-here" \
-  http://localhost:8000/api/v1/users/me
+  http://localhost:8000/api/users/me
 ```
-
-## User Groups
-
-AudioBookRequest has three user groups with different API permissions:
-
-- **untrusted**: Can make requests that require manual approval
-- **trusted**: Can make requests that are automatically processed  
-- **admin**: Can manage users, settings, and access all system functions
 
 ## API Documentation
 
-For complete API documentation with interactive testing capabilities:
+For a SwaggerUI documentation with interactive testing capabilities:
 
-1. Set the environment variable: `ABR_APP__OPENAPI_ENABLED=true`
-2. Start the server: `uv run fastapi dev`
-3. Visit: `http://localhost:8000/docs` (Swagger UI) or `http://localhost:8000/redoc` (ReDoc)
-
-The interactive documentation provides:
-- Complete endpoint documentation
-- Request/response schemas
-- Example requests and responses
-- Ability to test endpoints directly in your browser
-- Authentication setup and testing
-
-## Security Considerations
-
-- Store API keys securely and never commit them to version control
-- Use HTTPS in production environments
-- Regularly rotate API keys
-- Monitor API usage for unusual patterns
-- Implement proper logging for security auditing
+1. Set the environment variable `ABR_OPENAPI_ENABLED=true`
+2. Head to `<your-domain>/docs`.

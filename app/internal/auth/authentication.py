@@ -8,6 +8,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBearer, OAuth2PasswordBearer, OpenIdConnect
+import pydantic
 from sqlmodel import Session, select
 
 from app.internal.auth.config import LoginTypeEnum, auth_config
@@ -88,45 +89,41 @@ def generate_api_key() -> str:
 
 
 def create_api_key(
-    session: Session,
     user: User,
     name: str,
 ) -> tuple[APIKey, str]:
-    key = generate_api_key()
-    key_hash = ph.hash(key)
-    
+    private_key = generate_api_key()
+    key_hash = ph.hash(private_key)
     api_key = APIKey(
         user_username=user.username,
         name=name,
         key_hash=key_hash,
     )
-    
-    session.add(api_key)
-    session.commit()
-    
-    return api_key, key
+    return api_key, private_key
 
 
 def authenticate_api_key(session: Session, key: str) -> Optional[User]:
-    api_keys = session.exec(select(APIKey).where(APIKey.enabled)).all()
-    
+    api_keys = session.exec(select(APIKey)).all()
+
     for api_key in api_keys:
         try:
             ph.verify(api_key.key_hash, key)
-            api_key.last_used = datetime.now()
-            session.add(api_key)
-            session.commit()
-            
-            user = session.get(User, api_key.user_username)
-            if not user:
-                # User has been deleted but API key still exists
-                # This shouldn't happen with CASCADE, but handle it gracefully
-                logger.warning(f"API key {api_key.id} references non-existent user {api_key.user_username}")
-                continue
-            return user
         except VerifyMismatchError:
             continue
-    
+
+        user = session.get(User, api_key.user_username)
+        if not user:
+            logger.error(
+                f"API key {api_key.id} references non-existent user {api_key.user_username}"
+            )
+            continue
+
+        api_key.last_used = datetime.now()
+        session.add(api_key)
+        session.commit()
+
+        return user
+
     return None
 
 
@@ -162,7 +159,19 @@ class ABRAuth:
                     status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
                 )
 
-            user = DetailedUser.model_validate(user, update={"login_type": login_type})
+            try:
+                user = DetailedUser.model_validate(
+                    user, update={"login_type": login_type}
+                )
+            except pydantic.ValidationError as e:
+                logger.error(
+                    "Failed to validate user model",
+                    exc_info=e,
+                    user=user,
+                )
+                raise RequiresLoginException(
+                    "Failed to validate user model. Please log in again."
+                )
 
             return user
 
@@ -180,7 +189,10 @@ class ABRAuth:
                     status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
                 )
 
-            user = DetailedUser.model_validate(user, update={"login_type": LoginTypeEnum.basic})
+            # We don't need the login_type for api keys
+            user = DetailedUser.model_validate(
+                user, update={"login_type": LoginTypeEnum.basic}
+            )
 
             return user
 

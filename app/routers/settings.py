@@ -52,7 +52,9 @@ def read_account(
     user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
 ):
-    api_keys = session.exec(select(APIKey).where(APIKey.user_username == user.username)).all()
+    api_keys = session.exec(
+        select(APIKey).where(APIKey.user_username == user.username)
+    ).all()
     return template_response(
         "settings_page/account.html",
         request,
@@ -101,21 +103,25 @@ def create_new_api_key(
 ):
     if not name.strip():
         raise ToastException("API key name cannot be empty", "error")
-    
-    api_key, key = create_api_key(session, user, name.strip())
-    
-    api_keys = session.exec(select(APIKey).where(APIKey.user_username == user.username)).all()
-    
+
+    api_key, private_key = create_api_key(user, name.strip())
+    session.add(api_key)
+    session.commit()
+
+    api_keys = session.exec(
+        select(APIKey).where(APIKey.user_username == user.username)
+    ).all()
+
     return template_response(
         "settings_page/account.html",
         request,
         user,
         {
-            "page": "account", 
+            "page": "account",
             "api_keys": api_keys,
-            "success": f"API key created: {key}",
+            "success": f"API key created: {private_key}",
             "show_api_key": True,
-            "new_api_key": key,
+            "new_api_key": private_key,
         },
         block_name="api_keys",
     )
@@ -130,18 +136,19 @@ def delete_api_key(
 ):
     api_key = session.exec(
         select(APIKey).where(
-            APIKey.id == api_key_id,
-            APIKey.user_username == user.username
+            APIKey.id == api_key_id, APIKey.user_username == user.username
         )
     ).first()
-    
+
     if not api_key:
-        raise ToastException("API key not found", "error")
-    
+        raise ToastException("API key not found", "error", cause_refresh=True)
+
     session.delete(api_key)
     session.commit()
-    
-    api_keys = session.exec(select(APIKey).where(APIKey.user_username == user.username)).all()
+
+    api_keys = session.exec(
+        select(APIKey).where(APIKey.user_username == user.username)
+    ).all()
     return template_response(
         "settings_page/account.html",
         request,
@@ -165,18 +172,20 @@ def toggle_api_key(
     api_key = session.exec(
         select(APIKey).where(
             APIKey.id == api_key_id,
-            APIKey.user_username == user.username
+            APIKey.user_username == user.username,
         )
     ).first()
-    
+
     if not api_key:
         raise ToastException("API key not found", "error")
-    
+
     api_key.enabled = not api_key.enabled
     session.add(api_key)
     session.commit()
-    
-    api_keys = session.exec(select(APIKey).where(APIKey.user_username == user.username)).all()
+
+    api_keys = session.exec(
+        select(APIKey).where(APIKey.user_username == user.username)
+    ).all()
     return template_response(
         "settings_page/account.html",
         request,
