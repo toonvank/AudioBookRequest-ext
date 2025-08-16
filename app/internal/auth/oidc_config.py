@@ -4,6 +4,7 @@ from aiohttp import ClientSession
 from sqlmodel import Session
 
 from app.util.cache import StringConfigCache
+from app.util.log import logger
 
 
 oidcConfigKey = Literal[
@@ -35,18 +36,30 @@ class oidcConfig(StringConfigCache[oidcConfigKey]):
         endpoint: str,
     ):
         self.set(session, "oidc_endpoint", endpoint)
-        async with client_session.get(endpoint) as response:
-            if response.status == 200:
-                data = await response.json()
-                self.set(
-                    session, "oidc_authorize_endpoint", data["authorization_endpoint"]
-                )
-                self.set(session, "oidc_token_endpoint", data["token_endpoint"])
-                self.set(session, "oidc_userinfo_endpoint", data["userinfo_endpoint"])
-                if "end_session_endpoint" in data and not self.get(
-                    session, "oidc_logout_url"
-                ):
-                    self.set(session, "oidc_logout_url", data["end_session_endpoint"])
+        try:
+            async with client_session.get(endpoint) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.set(
+                        session,
+                        "oidc_authorize_endpoint",
+                        data["authorization_endpoint"],
+                    )
+                    self.set(session, "oidc_token_endpoint", data["token_endpoint"])
+                    self.set(
+                        session, "oidc_userinfo_endpoint", data["userinfo_endpoint"]
+                    )
+                    if "end_session_endpoint" in data and not self.get(
+                        session, "oidc_logout_url"
+                    ):
+                        self.set(
+                            session, "oidc_logout_url", data["end_session_endpoint"]
+                        )
+        except Exception as e:
+            logger.error(f"Failed to set OIDC endpoint: {endpoint}. Error: {str(e)}")
+            raise InvalidOIDCConfiguration(
+                f"Failed to set OIDC endpoint: {endpoint}. Error: {str(e)}"
+            ) from None
 
     def get_redirect_https(self, session: Session) -> bool:
         if self.get(session, "oidc_redirect_https"):

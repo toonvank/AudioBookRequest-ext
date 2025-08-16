@@ -1,34 +1,15 @@
 import base64
 import secrets
-from enum import Enum
 from typing import Literal
 
 from sqlmodel import Session
 
+from app.internal.auth.login_types import LoginTypeEnum
 from app.internal.auth.session_middleware import middleware_linker
+from app.internal.env_settings import Settings
 from app.util.cache import StringConfigCache
+from app.util.log import logger
 from app.util.time import Minute, Second
-
-
-class LoginTypeEnum(str, Enum):
-    basic = "basic"
-    forms = "forms"
-    oidc = "oidc"
-    api_key = "api_key"
-    none = "none"
-
-    def is_basic(self):
-        return self == LoginTypeEnum.basic
-
-    def is_forms(self):
-        return self == LoginTypeEnum.forms
-
-    def is_none(self):
-        return self == LoginTypeEnum.none
-
-    def is_oidc(self):
-        return self == LoginTypeEnum.oidc
-
 
 AuthConfigKey = Literal[
     "login_type",
@@ -76,3 +57,24 @@ class AuthConfig(StringConfigCache[AuthConfigKey]):
 
 
 auth_config = AuthConfig()
+
+
+# force login type if enabled
+def initialize_force_login_type(session: Session):
+    login_type = auth_config.get(session, "login_type")
+    try:
+        force_login_type = Settings().app.get_force_login_type()
+    except Exception as e:
+        logger.error(f"Failed to get force login type: {e}")
+        force_login_type = None
+    if not login_type:
+        if force_login_type:
+            logger.debug(
+                "Application has not been initialized yet, ignoring force login type."
+            )
+        return
+    if force_login_type and force_login_type != LoginTypeEnum(login_type):
+        logger.info(
+            f"Force login type is set to {force_login_type}, overriding current login type: {login_type}"
+        )
+        auth_config.set_login_type(session, force_login_type)

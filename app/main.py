@@ -7,7 +7,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import func
 from sqlmodel import select
 
-from app.internal.auth.authentication import RequiresLoginException, auth_config
+from app.internal.auth.authentication import RequiresLoginException
+from app.internal.auth.config import auth_config, initialize_force_login_type
 from app.internal.auth.oidc_config import InvalidOIDCConfiguration
 from app.internal.auth.session_middleware import (
     DynamicSessionMiddleware,
@@ -27,6 +28,8 @@ fetch_scripts(Settings().app.debug)
 
 with open_session() as session:
     auth_secret = auth_config.get_auth_secret(session)
+    initialize_force_login_type(session)
+
 
 app = FastAPI(
     title="AudioBookRequest",

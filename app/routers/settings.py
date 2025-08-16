@@ -14,8 +14,9 @@ from app.internal.auth.authentication import (
     is_correct_password,
     raise_for_invalid_password,
 )
-from app.internal.auth.config import LoginTypeEnum, auth_config
-from app.internal.auth.oidc_config import oidc_config
+from app.internal.auth.config import auth_config
+from app.internal.auth.login_types import LoginTypeEnum
+from app.internal.auth.oidc_config import InvalidOIDCConfiguration, oidc_config
 from app.internal.env_settings import Settings
 from app.internal.indexers.abstract import SessionContainer
 from app.internal.indexers.configuration import indexer_configuration_cache
@@ -908,7 +909,10 @@ async def update_security(
 
     if login_type == LoginTypeEnum.oidc:
         if oidc_endpoint:
-            await oidc_config.set_endpoint(session, client_session, oidc_endpoint)
+            try:
+                await oidc_config.set_endpoint(session, client_session, oidc_endpoint)
+            except InvalidOIDCConfiguration as e:
+                raise ToastException(f"Invalid OIDC endpoint: {e.detail}", "error")
         if oidc_client_id:
             oidc_config.set(session, "oidc_client_id", oidc_client_id)
         if oidc_client_secret:

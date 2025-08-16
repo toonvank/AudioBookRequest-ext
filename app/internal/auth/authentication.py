@@ -16,7 +16,8 @@ from fastapi.security import (
 from fastapi.security.base import SecurityBase
 from sqlmodel import Session, select
 
-from app.internal.auth.config import LoginTypeEnum, auth_config
+from app.internal.auth.login_types import LoginTypeEnum
+from app.internal.auth.config import auth_config
 from app.internal.models import APIKey, GroupEnum, User
 from app.util.db import get_session
 from app.util.log import logger

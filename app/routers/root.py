@@ -14,7 +14,8 @@ from app.internal.auth.authentication import (
     get_authenticated_user,
     raise_for_invalid_password,
 )
-from app.internal.auth.config import LoginTypeEnum, auth_config
+from app.internal.auth.login_types import LoginTypeEnum
+from app.internal.auth.config import auth_config
 from app.internal.env_settings import Settings
 from app.internal.models import GroupEnum
 from app.util.db import get_session

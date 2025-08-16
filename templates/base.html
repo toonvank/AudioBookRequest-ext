@@ -98,7 +98,12 @@
       </script>
       {% endif %}
     </div>
-    {% endblock toast_block %} {% if not hide_navbar %}
+    {% endblock toast_block %}
+    <script> 
+      // execute the script once here (to have it run on all pages), and once when the button loads below in the navbar
+      setTheme();
+    </script>
+    {% if not hide_navbar %}
     <header class="shadow-lg">
       <nav class="navbar">
         <div class="flex-1">

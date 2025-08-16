@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.internal.auth.config import LoginTypeEnum
+from app.internal.auth.login_types import LoginTypeEnum
 
 
 class DBSettings(BaseModel):

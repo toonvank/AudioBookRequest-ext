@@ -17,7 +17,8 @@ from app.internal.auth.authentication import (
     create_user,
     get_authenticated_user,
 )
-from app.internal.auth.config import LoginTypeEnum, auth_config
+from app.internal.auth.config import auth_config
+from app.internal.auth.login_types import LoginTypeEnum
 from app.internal.auth.oidc_config import InvalidOIDCConfiguration, oidc_config
 from app.internal.models import GroupEnum, User
 from app.util.connection import get_connection
