@@ -1,5 +1,6 @@
 from typing import Any, Mapping, overload
 
+import markdown
 from fastapi import Request, Response
 from jinja2_fragments.fastapi import Jinja2Blocks
 from starlette.background import BackgroundTask
@@ -19,6 +20,10 @@ templates.env.globals["json_regexp"] = (  # pyright: ignore[reportUnknownMemberT
     r'^\{\s*(?:"[^"\\]*(?:\\.[^"\\]*)*"\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"\s*(?:,\s*"[^"\\]*(?:\\.[^"\\]*)*"\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"\s*)*)?\}$'
 )
 templates.env.globals["base_url"] = Settings().app.base_url.rstrip("/")  # pyright: ignore[reportUnknownMemberType]
+
+with open("CHANGELOG.md", "r") as file:
+    changelog_content = file.read()
+templates.env.globals["changelog"] = markdown.markdown(changelog_content)  # pyright: ignore[reportUnknownMemberType]
 
 
 @overload

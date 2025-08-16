@@ -28,6 +28,7 @@ dependencies = [
     "requests",
     "structlog",
     "torf>=4.3.0",
+    "markdown>=3.8.2",
 ]
 
 # setuptools by default expects a "src" folder structure

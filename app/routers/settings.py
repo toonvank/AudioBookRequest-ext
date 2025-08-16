@@ -60,7 +60,7 @@ def read_account(
         "settings_page/account.html",
         request,
         user,
-        {"page": "account", "version": Settings().app.version, "api_keys": api_keys},
+        {"page": "account", "api_keys": api_keys},
     )
 
 

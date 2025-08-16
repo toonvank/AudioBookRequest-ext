@@ -169,7 +169,7 @@ browser-sync http://localhost:8000 --files templates/** --files app/**
 The docker compose can also be used to run the app locally:
 
 ```bash
-docker compose up --build
+docker compose --profile local up --build
 ```
 
 # Docs

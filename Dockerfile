@@ -19,6 +19,8 @@ RUN apk add --no-cache curl gcompat build-base
 RUN curl https://github.com/tailwindlabs/tailwindcss/releases/download/v4.0.6/tailwindcss-linux-arm64-musl -L -o /bin/tailwindcss
 
 FROM ${TARGETOS}-${TARGETARCH}${TARGETVARIANT}
+WORKDIR /app
+
 RUN chmod +x /bin/tailwindcss
 
 COPY --from=0 /app/node_modules/ node_modules/
@@ -32,6 +34,7 @@ COPY alembic.ini alembic.ini
 COPY static/ static/
 COPY templates/ templates/
 COPY app/ app/
+COPY CHANGELOG.md CHANGELOG.md
 
 RUN /bin/tailwindcss -i static/tw.css -o static/globals.css -m
 # Fetch all the required js files
