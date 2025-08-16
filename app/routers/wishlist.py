@@ -1,5 +1,5 @@
-from collections import defaultdict
 import uuid
+from collections import defaultdict
 from typing import Annotated, Literal, Optional
 
 from aiohttp import ClientSession
@@ -12,14 +12,18 @@ from fastapi import (
     Request,
     Response,
 )
-from sqlmodel import Session, asc, col, select
+from pydantic import BaseModel
+from sqlalchemy import func
+from sqlmodel import Session, asc, not_, select
 
+from app.internal.auth.authentication import DetailedUser, get_authenticated_user
 from app.internal.models import (
     BookRequest,
     BookWishlistResult,
     EventEnum,
     GroupEnum,
     ManualBookRequest,
+    User,
 )
 from app.internal.notifications import (
     send_all_manual_notifications,
@@ -31,13 +35,55 @@ from app.internal.prowlarr.prowlarr import (
     start_download,
 )
 from app.internal.query import query_sources
-from app.internal.auth.authentication import DetailedUser, get_authenticated_user
 from app.util.connection import get_connection
 from app.util.db import get_session, open_session
 from app.util.redirect import BaseUrlRedirectResponse
 from app.util.templates import template_response
 
 router = APIRouter(prefix="/wishlist")
+
+
+class WishlistCounts(BaseModel):
+    requests: int
+    downloaded: int
+    manual: int
+
+
+def get_wishlist_counts(
+    session: Session, user: Optional[User] = None
+) -> WishlistCounts:
+    """Optional user limits results to only the current user if they are not an admin."""
+    username = None if user is None or user.is_admin() else user.username
+
+    downloaded = session.exec(
+        select(func.count(func.distinct(BookRequest.asin)))
+        .where(
+            BookRequest.downloaded,
+            not username or BookRequest.user_username == username,
+        )
+        .select_from(BookRequest)
+    ).one()
+
+    requests = session.exec(
+        select(func.count(func.distinct(BookRequest.asin)))
+        .where(
+            not_(BookRequest.downloaded),
+            not username or BookRequest.user_username == username,
+        )
+        .select_from(BookRequest)
+    ).one()
+
+    manual = session.exec(
+        select(func.count())
+        .select_from(ManualBookRequest)
+        .where(not username or ManualBookRequest.user_username == username)
+    ).one()
+
+    return WishlistCounts(
+        requests=requests,
+        downloaded=downloaded,
+        manual=manual,
+    )
 
 
 def get_wishlist_books(
@@ -49,12 +95,9 @@ def get_wishlist_books(
     Gets the books that have been requested. If a username is given only the books requested by that
     user are returned. If no username is given, all book requests are returned.
     """
-    if username:
-        query = select(BookRequest).where(BookRequest.user_username == username)
-    else:
-        query = select(BookRequest).where(col(BookRequest.user_username).is_not(None))
-
-    book_requests = session.exec(query).all()
+    book_requests = session.exec(
+        select(BookRequest).where(not username or BookRequest.user_username == username)
+    ).all()
 
     # group by asin and aggregate all usernames
     usernames: dict[str, list[str]] = defaultdict(list)
@@ -91,11 +134,12 @@ async def wishlist(
 ):
     username = None if user.is_admin() else user.username
     books = get_wishlist_books(session, username, "not_downloaded")
+    counts = get_wishlist_counts(session, user)
     return template_response(
         "wishlist_page/wishlist.html",
         request,
         user,
-        {"books": books, "page": "wishlist"},
+        {"books": books, "page": "wishlist", "counts": counts},
     )
 
 
@@ -107,11 +151,12 @@ async def downloaded(
 ):
     username = None if user.is_admin() else user.username
     books = get_wishlist_books(session, username, "downloaded")
+    counts = get_wishlist_counts(session, user)
     return template_response(
         "wishlist_page/wishlist.html",
         request,
         user,
-        {"books": books, "page": "downloaded"},
+        {"books": books, "page": "downloaded", "counts": counts},
     )
 
 
@@ -142,11 +187,18 @@ async def update_downloaded(
 
     username = None if admin_user.is_admin() else admin_user.username
     books = get_wishlist_books(session, username, "not_downloaded")
+    counts = get_wishlist_counts(session, admin_user)
+
     return template_response(
         "wishlist_page/wishlist.html",
         request,
         admin_user,
-        {"books": books, "page": "wishlist"},
+        {
+            "books": books,
+            "page": "wishlist",
+            "counts": counts,
+            "update_tablist": True,
+        },
         block_name="book_wishlist",
     )
 
@@ -158,13 +210,16 @@ async def manual(
     session: Annotated[Session, Depends(get_session)],
 ):
     books = session.exec(
-        select(ManualBookRequest).order_by(asc(ManualBookRequest.downloaded))
+        select(ManualBookRequest)
+        .where(user.is_admin() or ManualBookRequest.user_username == user.username)
+        .order_by(asc(ManualBookRequest.downloaded))
     ).all()
+    counts = get_wishlist_counts(session, user)
     return template_response(
         "wishlist_page/manual.html",
         request,
         user,
-        {"books": books, "page": "manual"},
+        {"books": books, "page": "manual", "counts": counts},
     )
 
 
@@ -193,12 +248,18 @@ async def downloaded_manual(
     books = session.exec(
         select(ManualBookRequest).order_by(asc(ManualBookRequest.downloaded))
     ).all()
+    counts = get_wishlist_counts(session, admin_user)
 
     return template_response(
         "wishlist_page/manual.html",
         request,
         admin_user,
-        {"books": books, "page": "manual"},
+        {
+            "books": books,
+            "page": "manual",
+            "counts": counts,
+            "update_tablist": True,
+        },
         block_name="book_wishlist",
     )
 
@@ -218,11 +279,18 @@ async def delete_manual(
         session.commit()
 
     books = session.exec(select(ManualBookRequest)).all()
+    counts = get_wishlist_counts(session, admin_user)
+
     return template_response(
         "wishlist_page/manual.html",
         request,
         admin_user,
-        {"books": books, "page": "manual"},
+        {
+            "books": books,
+            "page": "manual",
+            "counts": counts,
+            "update_tablist": True,
+        },
         block_name="book_wishlist",
     )
 
@@ -350,10 +418,17 @@ async def start_auto_download(
         errored_book = [b for b in books if b.asin == asin][0]
         errored_book.download_error = download_error
 
+    counts = get_wishlist_counts(session, user)
+
     return template_response(
         "wishlist_page/wishlist.html",
         request,
         user,
-        {"books": books},
+        {
+            "books": books,
+            "page": "wishlist",
+            "counts": counts,
+            "update_tablist": True,
+        },
         block_name="book_wishlist",
     )

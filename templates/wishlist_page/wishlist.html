@@ -5,6 +5,7 @@
 {% block content %}
   <div class="overflow-x-auto h-[75vh] border-b pb-2 border-b-base-200">
     {% block book_wishlist %}
+      {% if update_tablist %}{% include "wishlist_page/tablist.html" %}{% endif %}
       <table id="book-table-body" class="table table-pin-rows min-w-[60rem]">
         <thead>
           <tr>

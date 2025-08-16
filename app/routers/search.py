@@ -35,7 +35,7 @@ from app.internal.notifications import (
 from app.internal.prowlarr.prowlarr import prowlarr_config
 from app.internal.query import query_sources
 from app.internal.ranking.quality import quality_config
-from app.routers.wishlist import get_wishlist_books
+from app.routers.wishlist import get_wishlist_books, get_wishlist_counts
 from app.internal.auth.authentication import DetailedUser, get_authenticated_user
 from app.util.connection import get_connection
 from app.util.db import get_session, open_session
@@ -244,12 +244,18 @@ async def delete_request(
     books = get_wishlist_books(
         session, None, "downloaded" if downloaded else "not_downloaded"
     )
+    counts = get_wishlist_counts(session, admin_user)
 
     return template_response(
         "wishlist_page/wishlist.html",
         request,
         admin_user,
-        {"books": books, "page": "downloaded" if downloaded else "wishlist"},
+        {
+            "books": books,
+            "page": "downloaded" if downloaded else "wishlist",
+            "counts": counts,
+            "update_tablist": True,
+        },
         block_name="book_wishlist",
     )
 
