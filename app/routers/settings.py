@@ -22,10 +22,10 @@ from app.internal.indexers.configuration import indexer_configuration_cache
 from app.internal.indexers.indexer_util import IndexerContext, get_indexer_contexts
 from app.internal.models import (
     APIKey,
-    NotificationBodyTypeEnum,
     EventEnum,
     GroupEnum,
     Notification,
+    NotificationBodyTypeEnum,
     User,
 )
 from app.internal.notifications import send_notification
@@ -828,6 +828,12 @@ def read_security(
     ],
     session: Annotated[Session, Depends(get_session)],
 ):
+    try:
+        force_login_type = Settings().app.get_force_login_type()
+    except ValueError as e:
+        logger.error("Invalid force login type", exc_info=e)
+        force_login_type = None
+
     return template_response(
         "settings_page/security.html",
         request,
@@ -845,6 +851,7 @@ def read_security(
             "oidc_group_claim": oidc_config.get(session, "oidc_group_claim", ""),
             "oidc_redirect_https": oidc_config.get_redirect_https(session),
             "oidc_logout_url": oidc_config.get(session, "oidc_logout_url", ""),
+            "force_login_type": force_login_type,
         },
     )
 
@@ -925,8 +932,20 @@ async def update_security(
         if error_message:
             raise ToastException(error_message, "error")
 
+    try:
+        force_login_type = Settings().app.get_force_login_type()
+    except ValueError as e:
+        logger.error("Invalid force login type", exc_info=e)
+        force_login_type = None
+    if force_login_type and login_type != force_login_type:
+        raise ToastException(
+            f"Cannot change login type to '{login_type.value}' when force login type is set to '{force_login_type.value}'",
+            "error",
+        )
+
     old = auth_config.get_login_type(session)
     auth_config.set_login_type(session, login_type)
+
     return template_response(
         "settings_page/security.html",
         request,
@@ -943,6 +962,7 @@ async def update_security(
             "oidc_endpoint": oidc_config.get(session, "oidc_endpoint", ""),
             "oidc_redirect_https": oidc_config.get_redirect_https(session),
             "oidc_logout_url": oidc_config.get(session, "oidc_logout_url", ""),
+            "force_login_type": force_login_type,
             "success": "Settings updated",
         },
         block_name="form",

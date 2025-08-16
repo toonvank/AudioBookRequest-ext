@@ -1,6 +1,10 @@
 import pathlib
+from typing import Optional
+
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.internal.auth.config import LoginTypeEnum
 
 
 class DBSettings(BaseModel):
@@ -16,7 +20,28 @@ class ApplicationSettings(BaseModel):
     version: str = "local"
     log_level: str = "INFO"
     base_url: str = ""
+
     default_region: str = "us"
+    """Default region used in the search"""
+
+    force_login_type: str = ""
+    """Forces the login type used. If set, the login type cannot be changed in the UI."""
+
+    init_root_username: str = ""
+    init_root_password: str = ""
+
+    def get_force_login_type(self) -> Optional[LoginTypeEnum]:
+        if self.force_login_type.strip():
+            try:
+                login_type = LoginTypeEnum(self.force_login_type.strip().lower())
+                if login_type == LoginTypeEnum.api_key:
+                    raise ValueError(
+                        "API key login type is not supported for forced login type."
+                    )
+                return login_type
+            except ValueError:
+                raise ValueError(f"Invalid force login type: {self.force_login_type}")
+        return None
 
 
 class Settings(BaseSettings):

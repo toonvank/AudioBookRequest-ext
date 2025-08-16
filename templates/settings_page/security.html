@@ -17,12 +17,16 @@
         <select id="login-type"
                 name="login_type"
                 class="select w-full"
-                x-model="loginType">
+                x-model="loginType"
+                {% if force_login_type %}disabled{% endif %}>
           <option value="basic" {% if login_type.is_basic() %}selected{% endif %}>Basic Auth (Dialog)</option>
           <option value="forms" {% if login_type.is_forms() %}selected{% endif %}>Forms Login</option>
           <option value="oidc" {% if login_type.is_oidc() %}selected{% endif %}>OpenID Connect</option>
           <option value="none" {% if login_type.is_none() %}selected{% endif %}>None (Insecure)</option>
         </select>
+        {% if force_login_type %}
+          <p class="text-xs opacity-60">Login type is forced by the environment variable <code>ABR_APP__FORCE_LOGIN_TYPE</code>.</p>
+        {% endif %}
         <template x-if="loginType === 'forms'">
           <div class="contents">
             <label for="expiry-input">Access Token Expiry (minutes)</label>

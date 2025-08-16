@@ -14,11 +14,15 @@
         up. OpenID Connect can be configured later.
       </p>
       <label for="login-type">Login Type</label>
-      <select id="login-type" name="login_type" class="select w-full">
-        <option value="basic">Basic Auth (Dialog)</option>
-        <option value="forms" selected>Forms Login</option>
-        <option value="none">None (Insecure)</option>
+      <select id="login-type"  name="login_type" class="select w-full" {% if force_login_type %}disabled{% endif %}
+      >
+        <option value="basic" {% if force_login_type and force_login_type.is_basic() %}selected{% endif %}>Basic Auth (Dialog)</option>
+        <option value="forms" {% if not force_login_type or force_login_type.is_forms() %}selected{% endif %}>Forms Login</option>;
+        <option value="none" {% if force_login_type and force_login_type.is_none() %}selected{% endif %}>None (Insecure)</option>
       </select>
+      {% if force_login_type %}
+        <p class="text-xs opacity-60">Login type is forced by the environment variable <code>ABR_APP__FORCE_LOGIN_TYPE</code>.</p>
+      {% endif %}
       <label for="username">Username</label>
       <input id="username"
              name="username"
