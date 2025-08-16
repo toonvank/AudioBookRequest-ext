@@ -1,4 +1,5 @@
 from typing import Annotated, Optional
+import uuid
 
 from sqlalchemy.exc import IntegrityError
 from aiohttp import ClientSession
@@ -265,10 +266,15 @@ async def read_manual(
     request: Request,
     user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
+    id: Optional[uuid.UUID] = None,
 ):
+    book = None
+    if id:
+        book = session.get(ManualBookRequest, id)
+
     auto_download = quality_config.get_auto_download(session)
     return template_response(
-        "manual.html", request, user, {"auto_download": auto_download}
+        "manual.html", request, user, {"auto_download": auto_download, "book": book}
     )
 
 
@@ -284,16 +290,28 @@ async def add_manual(
     subtitle: Annotated[Optional[str], Form()] = None,
     publish_date: Annotated[Optional[str], Form()] = None,
     info: Annotated[Optional[str], Form()] = None,
+    id: Optional[uuid.UUID] = None,
 ):
-    book_request = ManualBookRequest(
-        user_username=user.username,
-        title=title,
-        authors=author.split(","),
-        narrators=narrator.split(",") if narrator else [],
-        subtitle=subtitle,
-        publish_date=publish_date,
-        additional_info=info,
-    )
+    if id:
+        book_request = session.get(ManualBookRequest, id)
+        if not book_request:
+            raise HTTPException(status_code=404, detail="Book request not found")
+        book_request.title = title
+        book_request.subtitle = subtitle
+        book_request.authors = author.split(",")
+        book_request.narrators = narrator.split(",") if narrator else []
+        book_request.publish_date = publish_date
+        book_request.additional_info = info
+    else:
+        book_request = ManualBookRequest(
+            user_username=user.username,
+            title=title,
+            authors=author.split(","),
+            narrators=narrator.split(",") if narrator else [],
+            subtitle=subtitle,
+            publish_date=publish_date,
+            additional_info=info,
+        )
     session.add(book_request)
     session.flush()
     session.expunge_all()  # so that we can pass down the object without the session

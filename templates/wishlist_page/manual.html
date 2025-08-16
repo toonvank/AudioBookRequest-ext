@@ -64,6 +64,8 @@
                           hx-target="#book-table-body"
                           hx-disabled-elt="this">{% include "icons/checkmark.html" %}</button>
                 {% endif %}
+                <a class="btn btn-square" href="{{ base_url }}/search/manual?id={{ book.id }}"
+                   title="Edit">{% include "icons/pencil.html" %}</a>
               </td>
             </tr>
           {% endfor %}
