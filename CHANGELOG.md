@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.5.1](https://github.com/markbeep/AudioBookRequest/compare/v1.5.0...v1.5.1) (2025-08-16)
+
+
+### Features
+
+* add counters to wishlist pages ([1e93f72](https://github.com/markbeep/AudioBookRequest/commit/1e93f725af86caeefd9b7d44711bb06fb09f247d))
+* allow editing of manual requests. Closes [#73](https://github.com/markbeep/AudioBookRequest/issues/73) ([7c549be](https://github.com/markbeep/AudioBookRequest/commit/7c549be1efcb219fe652d4c79f733c597ed297e5))
+
+
+### Bug Fixes
+
+* correctly always show all books on requests page as admin ([1e93f72](https://github.com/markbeep/AudioBookRequest/commit/1e93f725af86caeefd9b7d44711bb06fb09f247d))
+
+
+### Miscellaneous Chores
+
+* remove leading v from version number ([5de5cbf](https://github.com/markbeep/AudioBookRequest/commit/5de5cbfcd61c5f52f9fccb38190a42c26fc024a0))
+
 ## [1.5.0](https://github.com/markbeep/AudioBookRequest/compare/1.4.9...v1.5.0) (2025-08-16)
 
 ### Features
