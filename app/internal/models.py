@@ -89,6 +89,12 @@ class BookWishlistResult(BaseBook):
 
 
 class BookRequest(BaseBook, table=True):
+    """
+    A book request is not directly a book that has been requested. At first, it is simply a cache so that we don't
+    have to query the book from the metadata servers every time.
+    TODO: Separate this into its own table
+    """
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     user_username: Optional[str] = Field(
         default=None, foreign_key="user.username", ondelete="CASCADE"

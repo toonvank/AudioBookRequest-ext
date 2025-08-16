@@ -18,6 +18,7 @@ from app.internal import book_search
 from app.internal.book_search import (
     audible_region_type,
     audible_regions,
+    clear_old_book_caches,
     get_book_by_asin,
     get_region_from_settings,
     list_audible_books,
@@ -97,6 +98,8 @@ async def read_search(
         books = get_already_requested(session, results, user.username)
 
     prowlarr_configured = prowlarr_config.is_valid(session)
+
+    clear_old_book_caches(session)
 
     return template_response(
         "search.html",

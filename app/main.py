@@ -14,6 +14,7 @@ from app.internal.auth.session_middleware import (
     DynamicSessionMiddleware,
     middleware_linker,
 )
+from app.internal.book_search import clear_old_book_caches
 from app.internal.env_settings import Settings
 from app.internal.models import User
 from app.routers import api, auth, root, search, settings, wishlist
@@ -29,6 +30,7 @@ fetch_scripts(Settings().app.debug)
 with open_session() as session:
     auth_secret = auth_config.get_auth_secret(session)
     initialize_force_login_type(session)
+    clear_old_book_caches(session)
 
 
 app = FastAPI(

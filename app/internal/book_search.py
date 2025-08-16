@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 import pydantic
 from aiohttp import ClientSession
+from sqlalchemy import CursorResult, delete
 from sqlmodel import Session, col, select
 
 from app.internal.env_settings import Settings
@@ -42,6 +43,17 @@ audible_regions: dict[audible_region_type, str] = {
 }
 
 
+def clear_old_book_caches(session: Session):
+    """Deletes outdated BookRequest entries that are used as a search result cache."""
+    delete_query = delete(BookRequest).where(
+        col(BookRequest.updated_at) < datetime.fromtimestamp(time.time() - REFETCH_TTL),
+        col(BookRequest.user_username).is_(None),
+    )
+    result: CursorResult = session.execute(delete_query)  # type: ignore[reportDeprecated]
+    session.commit()
+    logger.info("Cleared old book caches", rowcount=result.rowcount)
+
+
 def get_region_from_settings() -> audible_region_type:
     region = Settings().app.default_region
     if region not in audible_regions:
@@ -57,6 +69,7 @@ async def _get_audnexus_book(
     """
     https://audnex.us/#tag/Books/operation/getBookById
     """
+    logger.debug("Fetching book from Audnexus", asin=asin, region=region)
     async with session.get(
         f"https://api.audnex.us/books/{asin}?region={region}"
     ) as response:
@@ -89,6 +102,7 @@ async def _get_audimeta_book(
     """
     https://audimeta.de/api-docs/#/book/get_book__asin_
     """
+    logger.debug("Fetching book from Audimeta", asin=asin, region=region)
     async with session.get(
         f"https://audimeta.de/book/{asin}?region={region}"
     ) as response:
@@ -208,6 +222,7 @@ async def list_audible_books(
     cache_result = search_cache.get(cache_key)
 
     if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
+        logger.debug("Using cached search result", query=query, region=audible_region)
         return cache_result.value
 
     params = {
@@ -306,5 +321,13 @@ def store_new_books(session: Session, books: list[BookRequest]):
 
     existing_asins = {b.asin for b in existing}
     to_add = [b for b in books if b.asin not in existing_asins]
+
+    logger.info(
+        "Storing new search results in BookRequest cache/db",
+        to_add_count=len(to_add),
+        to_update_count=len(to_update),
+        existing_count=len(existing),
+    )
+
     session.add_all(to_add + existing)
     session.commit()

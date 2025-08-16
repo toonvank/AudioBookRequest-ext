@@ -14,7 +14,7 @@ from fastapi import (
 )
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlmodel import Session, asc, not_, select
+from sqlmodel import Session, asc, col, not_, select
 
 from app.internal.auth.authentication import DetailedUser, get_authenticated_user
 from app.internal.models import (
@@ -60,6 +60,7 @@ def get_wishlist_counts(
         .where(
             BookRequest.downloaded,
             not username or BookRequest.user_username == username,
+            col(BookRequest.user_username).is_not(None),
         )
         .select_from(BookRequest)
     ).one()
@@ -69,6 +70,7 @@ def get_wishlist_counts(
         .where(
             not_(BookRequest.downloaded),
             not username or BookRequest.user_username == username,
+            col(BookRequest.user_username).is_not(None),
         )
         .select_from(BookRequest)
     ).one()
@@ -76,7 +78,10 @@ def get_wishlist_counts(
     manual = session.exec(
         select(func.count())
         .select_from(ManualBookRequest)
-        .where(not username or ManualBookRequest.user_username == username)
+        .where(
+            not username or ManualBookRequest.user_username == username,
+            col(ManualBookRequest.user_username).is_not(None),
+        )
     ).one()
 
     return WishlistCounts(
@@ -96,7 +101,10 @@ def get_wishlist_books(
     user are returned. If no username is given, all book requests are returned.
     """
     book_requests = session.exec(
-        select(BookRequest).where(not username or BookRequest.user_username == username)
+        select(BookRequest).where(
+            not username or BookRequest.user_username == username,
+            col(BookRequest.user_username).is_not(None),
+        )
     ).all()
 
     # group by asin and aggregate all usernames
@@ -203,17 +211,24 @@ async def update_downloaded(
     )
 
 
+def _get_all_manual_requests(session: Session, user: User):
+    return session.exec(
+        select(ManualBookRequest)
+        .where(
+            user.is_admin() or ManualBookRequest.user_username == user.username,
+            col(ManualBookRequest.user_username).is_not(None),
+        )
+        .order_by(asc(ManualBookRequest.downloaded))
+    ).all()
+
+
 @router.get("/manual")
 async def manual(
     request: Request,
     user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
 ):
-    books = session.exec(
-        select(ManualBookRequest)
-        .where(user.is_admin() or ManualBookRequest.user_username == user.username)
-        .order_by(asc(ManualBookRequest.downloaded))
-    ).all()
+    books = _get_all_manual_requests(session, user)
     counts = get_wishlist_counts(session, user)
     return template_response(
         "wishlist_page/manual.html",
@@ -245,9 +260,7 @@ async def downloaded_manual(
             book_request=book_request,
         )
 
-    books = session.exec(
-        select(ManualBookRequest).order_by(asc(ManualBookRequest.downloaded))
-    ).all()
+    books = _get_all_manual_requests(session, admin_user)
     counts = get_wishlist_counts(session, admin_user)
 
     return template_response(
@@ -278,7 +291,7 @@ async def delete_manual(
         session.delete(book)
         session.commit()
 
-    books = session.exec(select(ManualBookRequest)).all()
+    books = _get_all_manual_requests(session, admin_user)
     counts = get_wishlist_counts(session, admin_user)
 
     return template_response(
