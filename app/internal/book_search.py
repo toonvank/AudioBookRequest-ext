@@ -222,6 +222,9 @@ async def list_audible_books(
     cache_result = search_cache.get(cache_key)
 
     if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
+        for book in cache_result.value:
+            # add back books to the session so we can access their attributes
+            session.add(book)
         logger.debug("Using cached search result", query=query, region=audible_region)
         return cache_result.value
 
@@ -250,7 +253,9 @@ async def list_audible_books(
     coros = [get_book_by_asin(client_session, asin, audible_region) for asin in asins]
     new_books = await asyncio.gather(*coros)
     new_books = [b for b in new_books if b]
+
     store_new_books(session, new_books)
+
     for b in new_books:
         books[b.asin] = b
 
