@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.5.3](https://github.com/markbeep/AudioBookRequest/compare/v1.5.2...v1.5.3) (2025-08-18)
+
+
+### Bug Fixes
+
+* correctly cache admin user when using the 'none' login type to prevent crashing ([990396a](https://github.com/markbeep/AudioBookRequest/commit/990396a519c0e186bb45a1206856f2922f88da2a))
+* restore cached search results without crashing. Closes [#130](https://github.com/markbeep/AudioBookRequest/issues/130) ([b032fbc](https://github.com/markbeep/AudioBookRequest/commit/b032fbc92ee66dc31d9f37bc38fd6131fbeab626))
+
+
+### Dependencies
+
+* update packages ([9acec07](https://github.com/markbeep/AudioBookRequest/commit/9acec077c0995ac0e7c4db84035f091ca216cd93))
+
+
+### Miscellaneous Chores
+
+* release-please add changelog-sections ([1701143](https://github.com/markbeep/AudioBookRequest/commit/1701143bb304a20518dfab94c9b7cfbe7e779d9c))
+
+
+### Code Refactoring
+
+* use class-based authentication to automatically get generated in the OpenAPI specs ([8d08c89](https://github.com/markbeep/AudioBookRequest/commit/8d08c891c4be04919eae25e60b87ed5d250eedd8))
+
 ## [1.5.2](https://github.com/markbeep/AudioBookRequest/compare/v1.5.1...v1.5.2) (2025-08-16)
 
 
