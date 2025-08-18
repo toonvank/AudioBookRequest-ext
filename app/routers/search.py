@@ -174,6 +174,7 @@ async def add_request(
         session.add(book)
         session.commit()
     except IntegrityError:
+        session.rollback()
         pass  # ignore if already exists
 
     background_task.add_task(

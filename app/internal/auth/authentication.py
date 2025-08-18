@@ -108,31 +108,6 @@ def create_api_key(
     return api_key, private_key
 
 
-def _authenticate_api_key(session: Session, key: str) -> Optional[User]:
-    api_keys = session.exec(select(APIKey)).all()
-
-    for api_key in api_keys:
-        try:
-            ph.verify(api_key.key_hash, key)
-        except VerifyMismatchError:
-            continue
-
-        user = session.get(User, api_key.user_username)
-        if not user:
-            logger.error(
-                f"API key {api_key.id} references non-existent user {api_key.user_username}"
-            )
-            continue
-
-        api_key.last_used = datetime.now()
-        session.add(api_key)
-        session.commit()
-
-        return user
-
-    return None
-
-
 class APIKeyAuth(SecurityBase):
     def __init__(
         self,
@@ -155,7 +130,7 @@ class APIKeyAuth(SecurityBase):
                     status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing API key"
                 )
             return None
-        user = _authenticate_api_key(session, api_key.credentials)
+        user = self._authenticate_api_key(session, api_key.credentials)
         if user is None:
             if self.auto_error:
                 raise HTTPException(
@@ -172,6 +147,30 @@ class APIKeyAuth(SecurityBase):
             user, update={"login_type": LoginTypeEnum.api_key}
         )
         return user
+
+    def _authenticate_api_key(self, session: Session, key: str) -> Optional[User]:
+        api_keys = session.exec(select(APIKey)).all()
+
+        for api_key in api_keys:
+            try:
+                ph.verify(api_key.key_hash, key)
+            except VerifyMismatchError:
+                continue
+
+            user = session.get(User, api_key.user_username)
+            if not user:
+                logger.error(
+                    f"API key {api_key.id} references non-existent user {api_key.user_username}"
+                )
+                continue
+
+            api_key.last_used = datetime.now()
+            session.add(api_key)
+            session.commit()
+
+            return user
+
+        return None
 
 
 class RequiresLoginException(Exception):
@@ -192,34 +191,53 @@ class ABRAuth:
         ) -> DetailedUser:
             login_type = auth_config.get_login_type(session)
 
+            logger.debug(
+                "Checking user authentication",
+                url=request.url,
+                login_type=login_type,
+                lowest_allowed_group=lowest_allowed_group,
+            )
             if login_type == LoginTypeEnum.forms:
-                user = await self._get_session_auth(request, session)
+                standard_user = await self._get_session_auth(request, session)
             elif login_type == LoginTypeEnum.none:
-                user = await self._get_none_auth(session)
+                standard_user = await self._get_none_auth(session)
             elif login_type == LoginTypeEnum.oidc:
-                user = await self._get_oidc_auth(request, session)
+                standard_user = await self._get_oidc_auth(request, session)
             else:
-                user = await self._get_basic_auth(request, session)
+                standard_user = await self._get_basic_auth(request, session)
 
-            if not user.is_above(lowest_allowed_group):
+            if not standard_user.is_above(lowest_allowed_group):
+                logger.warning(
+                    "User does not have sufficient permissions",
+                    username=standard_user.username,
+                    group=standard_user.group,
+                    lowest_allowed_group=lowest_allowed_group,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
                 )
 
             try:
                 user = DetailedUser.model_validate(
-                    user, update={"login_type": login_type}
+                    standard_user, update={"login_type": login_type}
                 )
             except pydantic.ValidationError as e:
                 logger.error(
                     "Failed to validate user model",
                     exc_info=e,
-                    user=user,
+                    user=standard_user.model_dump(),
                 )
+                exit(0)
                 raise RequiresLoginException(
                     "Failed to validate user model. Please log in again."
                 )
 
+            logger.debug(
+                "User authenticated successfully",
+                username=user.username,
+                group=user.group,
+                login_type=login_type,
+            )
             return user
 
         return get_user
@@ -229,6 +247,8 @@ class ABRAuth:
         request: Request,
         session: Session,
     ) -> User:
+        logger.debug("Getting user from basic auth", url=request.url)
+
         invalid_exception = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -237,12 +257,15 @@ class ABRAuth:
 
         credentials = await security(request)
         if not credentials:
+            logger.debug("No credentials provided")
             raise invalid_exception
 
         user = authenticate_user(session, credentials.username, credentials.password)
         if not user:
+            logger.debug("Invalid username or password", username=credentials.username)
             raise invalid_exception
 
+        logger.debug("Logged in with basic auth", username=user.username)
         return user
 
     async def _get_session_auth(
@@ -250,15 +273,19 @@ class ABRAuth:
         request: Request,
         session: Session,
     ) -> User:
+        logger.debug("Getting user from session", url=request.url)
         # It's enough to get the username from the signed session cookie
         username = request.session.get("sub")
         if not username:
+            logger.debug("No username found in session sub")
             raise RequiresLoginException()
 
         user = session.get(User, username)
         if not user:
+            logger.debug("User does not exist", username=username)
             raise RequiresLoginException("User does not exist")
 
+        logger.debug("Logged in with session", username=user.username)
         return user
 
     async def _get_oidc_auth(
@@ -266,17 +293,31 @@ class ABRAuth:
         request: Request,
         session: Session,
     ) -> User:
+        logger.debug("Getting user from OIDC session", url=request.url)
         if request.session.get("exp", inf) < time.time():
+            logger.debug("OIDC session expired", exp=request.session.get("exp"))
             raise RequiresLoginException()
         return await self._get_session_auth(request, session)
 
     async def _get_none_auth(self, session: Session) -> User:
         """Treats every request as being root by returning the first admin user"""
         if self.none_user:
+            logger.debug(
+                "Using none auth, returning cached admin user",
+                username=self.none_user.username,
+                group=self.none_user.group,
+            )
+            session.add(self.none_user)  # Ensure the user is tracked by SQLModel again
             return self.none_user
         self.none_user = session.exec(
             select(User).where(User.group == GroupEnum.admin).limit(1)
         ).one()
+
+        logger.debug(
+            "Using none auth, returning newly fetched admin user",
+            username=self.none_user.username,
+            group=self.none_user.group,
+        )
         return self.none_user
 
 
