@@ -4,18 +4,18 @@ from pathlib import Path
 from typing import Annotated, Callable
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, Security
 from fastapi.responses import FileResponse
 from sqlmodel import Session
 
 from app.internal.auth.authentication import (
+    ABRAuth,
     DetailedUser,
     create_user,
-    get_authenticated_user,
     raise_for_invalid_password,
 )
-from app.internal.auth.login_types import LoginTypeEnum
 from app.internal.auth.config import auth_config
+from app.internal.auth.login_types import LoginTypeEnum
 from app.internal.env_settings import Settings
 from app.internal.models import GroupEnum
 from app.util.db import get_session
@@ -130,7 +130,7 @@ def read_favicon_svg():
 @router.get("/")
 def read_root(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     return BaseUrlRedirectResponse("/search")
     # TODO: create a root page

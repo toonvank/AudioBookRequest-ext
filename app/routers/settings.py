@@ -3,14 +3,14 @@ import uuid
 from typing import Annotated, Any, Optional, cast
 
 from aiohttp import ClientResponseError, ClientSession
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, Security
 from sqlmodel import Session, select
 
 from app.internal.auth.authentication import (
+    ABRAuth,
     DetailedUser,
     create_api_key,
     create_user,
-    get_authenticated_user,
     is_correct_password,
     raise_for_invalid_password,
 )
@@ -50,8 +50,8 @@ router = APIRouter(prefix="/settings")
 @router.get("/account")
 def read_account(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     api_keys = session.exec(
         select(APIKey).where(APIKey.user_username == user.username)
@@ -71,7 +71,7 @@ def change_password(
     password: Annotated[str, Form()],
     confirm_password: Annotated[str, Form()],
     session: Annotated[Session, Depends(get_session)],
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     if not is_correct_password(user, old_password):
         raise ToastException("Old password is incorrect", "error")
@@ -100,7 +100,7 @@ def create_new_api_key(
     request: Request,
     name: Annotated[str, Form()],
     session: Annotated[Session, Depends(get_session)],
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     if not name.strip():
         raise ToastException("API key name cannot be empty", "error")
@@ -133,7 +133,7 @@ def delete_api_key(
     request: Request,
     api_key_id: uuid.UUID,
     session: Annotated[Session, Depends(get_session)],
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     api_key = session.exec(
         select(APIKey).where(
@@ -168,7 +168,7 @@ def toggle_api_key(
     request: Request,
     api_key_id: uuid.UUID,
     session: Annotated[Session, Depends(get_session)],
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     api_key = session.exec(
         select(APIKey).where(
@@ -203,10 +203,8 @@ def toggle_api_key(
 @router.get("/users")
 def read_users(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     users = session.exec(select(User)).all()
     is_oidc = auth_config.get_login_type(session) == LoginTypeEnum.oidc
@@ -229,9 +227,7 @@ def create_new_user(
     password: Annotated[str, Form()],
     group: Annotated[str, Form()],
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     if username.strip() == "":
         raise ToastException("Invalid username", "error")
@@ -270,9 +266,7 @@ def delete_user(
     request: Request,
     username: str,
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     if username == admin_user.username:
         raise ToastException("Cannot delete own user", "error")
@@ -302,9 +296,7 @@ def update_user(
     username: str,
     group: Annotated[GroupEnum, Form()],
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     user = session.exec(select(User).where(User.username == username)).one_or_none()
     if user and user.root:
@@ -328,12 +320,10 @@ def update_user(
 @router.get("/prowlarr")
 async def read_prowlarr(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
     prowlarr_misconfigured: Optional[Any] = None,
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     prowlarr_base_url = prowlarr_config.get_base_url(session)
     prowlarr_api_key = prowlarr_config.get_api_key(session)
@@ -362,9 +352,7 @@ async def read_prowlarr(
 def update_prowlarr_api_key(
     api_key: Annotated[str, Form()],
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     prowlarr_config.set_api_key(session, api_key)
     flush_prowlarr_cache()
@@ -375,9 +363,7 @@ def update_prowlarr_api_key(
 def update_prowlarr_base_url(
     base_url: Annotated[str, Form()],
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     prowlarr_config.set_base_url(session, base_url)
     flush_prowlarr_cache()
@@ -387,11 +373,9 @@ def update_prowlarr_base_url(
 @router.put("/prowlarr/category")
 def update_indexer_categories(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     categories: Annotated[list[int], Form(alias="c")] = [],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     prowlarr_config.set_categories(session, categories)
     selected = set(categories)
@@ -413,12 +397,10 @@ def update_indexer_categories(
 @router.put("/prowlarr/indexers")
 async def update_selected_indexers(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
     indexer_ids: Annotated[list[int], Form(alias="i")] = [],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     prowlarr_config.set_indexers(session, indexer_ids)
 
@@ -443,9 +425,7 @@ async def update_selected_indexers(
 def read_download(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     auto_download = quality_config.get_auto_download(session)
     flac_range = quality_config.get_range(session, "quality_flac")
@@ -495,10 +475,8 @@ def update_download(
     name_ratio: Annotated[int, Form()],
     title_ratio: Annotated[int, Form()],
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     auto_download: Annotated[bool, Form()] = False,
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     flac = QualityRange(from_kbits=flac_from, to_kbits=flac_to)
     m4b = QualityRange(from_kbits=m4b_from, to_kbits=m4b_to)
@@ -542,9 +520,7 @@ def update_download(
 @router.delete("/download")
 def reset_download_setings(
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     quality_config.reset_all(session)
     return Response(status_code=204, headers={"HX-Refresh": "true"})
@@ -554,11 +530,9 @@ def reset_download_setings(
 def add_indexer_flag(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     flag: Annotated[str, Form()],
     score: Annotated[int, Form()],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     flags = quality_config.get_indexer_flags(session)
     if not any(f.flag == flag for f in flags):
@@ -579,9 +553,7 @@ def remove_indexer_flag(
     request: Request,
     flag: str,
     session: Annotated[Session, Depends(get_session)],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     flags = quality_config.get_indexer_flags(session)
     flags = [f for f in flags if f.flag != flag]
@@ -598,10 +570,8 @@ def remove_indexer_flag(
 @router.get("/notifications")
 def read_notifications(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     notifications = session.exec(select(Notification)).all()
     event_types = [e.value for e in EventEnum]
@@ -716,11 +686,9 @@ def add_notification(
     event_type: Annotated[str, Form()],
     body_type: Annotated[NotificationBodyTypeEnum, Form()],
     headers: Annotated[str, Form()],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     body: Annotated[str, Form()] = "{}",
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     return _upsert_notification(
         request=request,
@@ -744,11 +712,9 @@ def update_notification(
     event_type: Annotated[str, Form()],
     body_type: Annotated[NotificationBodyTypeEnum, Form()],
     headers: Annotated[str, Form()],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     body: Annotated[str, Form()] = "{}",
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     return _upsert_notification(
         notification_id=notification_id,
@@ -768,10 +734,8 @@ def update_notification(
 def toggle_notification(
     request: Request,
     notification_id: uuid.UUID,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     notification = session.get_one(Notification, notification_id)
     if not notification:
@@ -787,10 +751,8 @@ def toggle_notification(
 def delete_notification(
     request: Request,
     notification_id: uuid.UUID,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     notification = session.get_one(Notification, notification_id)
     if not notification:
@@ -804,10 +766,8 @@ def delete_notification(
 @router.post("/notification/{notification_id}")
 async def test_notification(
     notification_id: uuid.UUID,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     notification = session.get(Notification, notification_id)
     if not notification:
@@ -824,10 +784,8 @@ async def test_notification(
 @router.get("/security")
 def read_security(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     try:
         force_login_type = Settings().app.get_force_login_type()
@@ -859,10 +817,8 @@ def read_security(
 
 @router.post("/security/reset-auth")
 def reset_auth_secret(
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     auth_config.reset_auth_secret(session)
     return Response(status_code=204, headers={"HX-Refresh": "true"})
@@ -872,9 +828,6 @@ def reset_auth_secret(
 async def update_security(
     login_type: Annotated[LoginTypeEnum, Form()],
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
     access_token_expiry: Optional[int] = Form(None),
@@ -887,6 +840,7 @@ async def update_security(
     oidc_group_claim: Optional[str] = Form(None),
     oidc_redirect_https: Optional[bool] = Form(False),
     oidc_logout_url: Optional[str] = Form(None),
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     if (
         login_type in [LoginTypeEnum.basic, LoginTypeEnum.forms]
@@ -977,11 +931,9 @@ async def update_security(
 @router.get("/indexers")
 async def read_indexers(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     contexts = await get_indexer_contexts(
         SessionContainer(session=session, client_session=client_session),
@@ -1003,12 +955,10 @@ async def read_indexers(
 @router.post("/indexers")
 async def update_indexers(
     request: Request,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     indexer_select: Annotated[str, Form()],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     contexts = await get_indexer_contexts(
         SessionContainer(session=session, client_session=client_session),

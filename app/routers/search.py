@@ -1,7 +1,6 @@
-from typing import Annotated, Optional
 import uuid
+from typing import Annotated, Optional
 
-from sqlalchemy.exc import IntegrityError
 from aiohttp import ClientSession
 from fastapi import (
     APIRouter,
@@ -11,10 +10,13 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Security,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
 from app.internal import book_search
+from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.book_search import (
     audible_region_type,
     audible_regions,
@@ -38,7 +40,6 @@ from app.internal.prowlarr.prowlarr import prowlarr_config
 from app.internal.query import query_sources
 from app.internal.ranking.quality import quality_config
 from app.routers.wishlist import get_wishlist_books, get_wishlist_counts
-from app.internal.auth.authentication import DetailedUser, get_authenticated_user
 from app.util.connection import get_connection
 from app.util.db import get_session, open_session
 from app.util.templates import template_response
@@ -71,13 +72,13 @@ def get_already_requested(session: Session, results: list[BookRequest], username
 @router.get("")
 async def read_search(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     client_session: Annotated[ClientSession, Depends(get_connection)],
     session: Annotated[Session, Depends(get_session)],
     query: Annotated[Optional[str], Query(alias="q")] = None,
     num_results: int = 20,
     page: int = 0,
     region: audible_region_type = get_region_from_settings(),
+    user: DetailedUser = Security(ABRAuth()),
 ):
     if audible_regions.get(region) is None:
         raise HTTPException(status_code=400, detail="Invalid region")
@@ -121,8 +122,8 @@ async def read_search(
 @router.get("/suggestions")
 async def search_suggestions(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     query: Annotated[str, Query(alias="q")],
+    user: DetailedUser = Security(ABRAuth()),
     region: audible_region_type = get_region_from_settings(),
 ):
     async with ClientSession() as client_session:
@@ -156,7 +157,6 @@ async def background_start_query(
 async def add_request(
     request: Request,
     asin: str,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
     background_task: BackgroundTasks,
@@ -164,6 +164,7 @@ async def add_request(
     page: Annotated[int, Form()],
     region: Annotated[audible_region_type, Form()],
     num_results: Annotated[int, Form()] = 20,
+    user: DetailedUser = Security(ABRAuth()),
 ):
     book = await get_book_by_asin(client_session, asin, region)
     if not book:
@@ -235,11 +236,9 @@ async def add_request(
 async def delete_request(
     request: Request,
     asin: str,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     downloaded: Optional[bool] = None,
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     books = session.exec(select(BookRequest).where(BookRequest.asin == asin)).all()
     if books:
@@ -268,9 +267,9 @@ async def delete_request(
 @router.get("/manual")
 async def read_manual(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
     id: Optional[uuid.UUID] = None,
+    user: DetailedUser = Security(ABRAuth()),
 ):
     book = None
     if id:
@@ -285,7 +284,6 @@ async def read_manual(
 @router.post("/manual")
 async def add_manual(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
     background_task: BackgroundTasks,
     title: Annotated[str, Form()],
@@ -295,6 +293,7 @@ async def add_manual(
     publish_date: Annotated[Optional[str], Form()] = None,
     info: Annotated[Optional[str], Form()] = None,
     id: Optional[uuid.UUID] = None,
+    user: DetailedUser = Security(ABRAuth()),
 ):
     if id:
         book_request = session.get(ManualBookRequest, id)

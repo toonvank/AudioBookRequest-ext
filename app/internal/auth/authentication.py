@@ -13,6 +13,7 @@ from fastapi.security import (
     HTTPBearer,
     OpenIdConnect,
 )
+from fastapi.openapi.models import SecurityBase as SecurityBaseModel, SecuritySchemeType
 from fastapi.security.base import SecurityBase
 from sqlmodel import Session, select
 
@@ -21,6 +22,8 @@ from app.internal.auth.config import auth_config
 from app.internal.models import APIKey, GroupEnum, User
 from app.util.db import get_session
 from app.util.log import logger
+
+ph = PasswordHasher()
 
 
 class DetailedUser(User):
@@ -121,7 +124,9 @@ class APIKeyAuth(SecurityBase):
         self.lowest_allowed_group = lowest_allowed_group
 
     async def __call__(
-        self, request: Request, session: Annotated[Session, Depends(get_session)]
+        self,
+        request: Request,
+        session: Annotated[Session, Depends(get_session)],
     ) -> Optional[DetailedUser]:
         api_key = await self.api_key_header(request)
         if api_key is None:
@@ -179,68 +184,72 @@ class RequiresLoginException(Exception):
         self.detail = detail
 
 
-class ABRAuth:
-    def __init__(self):
+class ABRAuth(SecurityBase):
+    def __init__(self, lowest_allowed_group: GroupEnum = GroupEnum.untrusted):
+        self.lowest_allowed_group = lowest_allowed_group
         self.oidc_scheme: Optional[OpenIdConnect] = None
         self.none_user: Optional[User] = None
+        self.security = HTTPBasic()
+        self.model = SecurityBaseModel(
+            type=SecuritySchemeType.openIdConnect, description="ABR Authentication"
+        )
+        self.scheme_name = lowest_allowed_group.capitalize() + " ABR Authentication"
 
-    def get_authenticated_user(self, lowest_allowed_group: GroupEnum):
-        async def get_user(
-            request: Request,
-            session: Annotated[Session, Depends(get_session)],
-        ) -> DetailedUser:
-            login_type = auth_config.get_login_type(session)
+    async def __call__(
+        self,
+        request: Request,
+        session: Annotated[Session, Depends(get_session)],
+    ) -> DetailedUser:
+        login_type = auth_config.get_login_type(session)
 
-            logger.debug(
-                "Checking user authentication",
-                url=request.url,
-                login_type=login_type,
-                lowest_allowed_group=lowest_allowed_group,
+        logger.debug(
+            "Checking user authentication",
+            url=request.url,
+            login_type=login_type,
+            lowest_allowed_group=self.lowest_allowed_group,
+        )
+        if login_type == LoginTypeEnum.forms:
+            standard_user = await self._get_session_auth(request, session)
+        elif login_type == LoginTypeEnum.none:
+            standard_user = await self._get_none_auth(session)
+        elif login_type == LoginTypeEnum.oidc:
+            standard_user = await self._get_oidc_auth(request, session)
+        else:
+            standard_user = await self._get_basic_auth(request, session)
+
+        if not standard_user.is_above(self.lowest_allowed_group):
+            logger.warning(
+                "User does not have sufficient permissions",
+                username=standard_user.username,
+                group=standard_user.group,
+                lowest_allowed_group=self.lowest_allowed_group,
             )
-            if login_type == LoginTypeEnum.forms:
-                standard_user = await self._get_session_auth(request, session)
-            elif login_type == LoginTypeEnum.none:
-                standard_user = await self._get_none_auth(session)
-            elif login_type == LoginTypeEnum.oidc:
-                standard_user = await self._get_oidc_auth(request, session)
-            else:
-                standard_user = await self._get_basic_auth(request, session)
-
-            if not standard_user.is_above(lowest_allowed_group):
-                logger.warning(
-                    "User does not have sufficient permissions",
-                    username=standard_user.username,
-                    group=standard_user.group,
-                    lowest_allowed_group=lowest_allowed_group,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
-                )
-
-            try:
-                user = DetailedUser.model_validate(
-                    standard_user, update={"login_type": login_type}
-                )
-            except pydantic.ValidationError as e:
-                logger.error(
-                    "Failed to validate user model",
-                    exc_info=e,
-                    user=standard_user.model_dump(),
-                )
-                exit(0)
-                raise RequiresLoginException(
-                    "Failed to validate user model. Please log in again."
-                )
-
-            logger.debug(
-                "User authenticated successfully",
-                username=user.username,
-                group=user.group,
-                login_type=login_type,
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden"
             )
-            return user
 
-        return get_user
+        try:
+            user = DetailedUser.model_validate(
+                standard_user, update={"login_type": login_type}
+            )
+        except pydantic.ValidationError as e:
+            logger.error(
+                "Failed to validate user model",
+                exc_info=e,
+                user=standard_user.model_dump(),
+            )
+            exit(0)
+            raise RequiresLoginException(
+                "Failed to validate user model. Please log in again."
+            )
+
+        logger.debug(
+            "User authenticated successfully",
+            username=user.username,
+            group=user.group,
+            login_type=login_type,
+        )
+        return user
 
     async def _get_basic_auth(
         self,
@@ -255,7 +264,7 @@ class ABRAuth:
             headers={"WWW-Authenticate": "Basic"},
         )
 
-        credentials = await security(request)
+        credentials = await self.security(request)
         if not credentials:
             logger.debug("No credentials provided")
             raise invalid_exception
@@ -307,11 +316,14 @@ class ABRAuth:
                 username=self.none_user.username,
                 group=self.none_user.group,
             )
-            session.add(self.none_user)  # Ensure the user is tracked by SQLModel again
             return self.none_user
+
         self.none_user = session.exec(
             select(User).where(User.group == GroupEnum.admin).limit(1)
         ).one()
+
+        # Expunge is required to enable the user to be cached across sessions
+        session.expunge(self.none_user)
 
         logger.debug(
             "Using none auth, returning newly fetched admin user",
@@ -319,12 +331,3 @@ class ABRAuth:
             group=self.none_user.group,
         )
         return self.none_user
-
-
-security = HTTPBasic()
-ph = PasswordHasher()
-abr_authentication = ABRAuth()
-
-
-def get_authenticated_user(lowest_allowed_group: GroupEnum = GroupEnum.untrusted):
-    return abr_authentication.get_authenticated_user(lowest_allowed_group)

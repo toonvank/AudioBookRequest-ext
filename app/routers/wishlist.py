@@ -11,12 +11,13 @@ from fastapi import (
     HTTPException,
     Request,
     Response,
+    Security,
 )
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import Session, asc, col, not_, select
 
-from app.internal.auth.authentication import DetailedUser, get_authenticated_user
+from app.internal.auth.authentication import ABRAuth, DetailedUser
 from app.internal.models import (
     BookRequest,
     BookWishlistResult,
@@ -137,8 +138,8 @@ def get_wishlist_books(
 @router.get("")
 async def wishlist(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     username = None if user.is_admin() else user.username
     books = get_wishlist_books(session, username, "not_downloaded")
@@ -154,8 +155,8 @@ async def wishlist(
 @router.get("/downloaded")
 async def downloaded(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     username = None if user.is_admin() else user.username
     books = get_wishlist_books(session, username, "downloaded")
@@ -172,11 +173,9 @@ async def downloaded(
 async def update_downloaded(
     request: Request,
     asin: str,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     background_task: BackgroundTasks,
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     books = session.exec(select(BookRequest).where(BookRequest.asin == asin)).all()
     requested_by = [book.user_username for book in books if book.user_username]
@@ -225,8 +224,8 @@ def _get_all_manual_requests(session: Session, user: User):
 @router.get("/manual")
 async def manual(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     books = _get_all_manual_requests(session, user)
     counts = get_wishlist_counts(session, user)
@@ -242,11 +241,9 @@ async def manual(
 async def downloaded_manual(
     request: Request,
     id: uuid.UUID,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     background_task: BackgroundTasks,
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     book_request = session.get(ManualBookRequest, id)
     if book_request:
@@ -281,10 +278,8 @@ async def downloaded_manual(
 async def delete_manual(
     request: Request,
     id: uuid.UUID,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     book = session.get(ManualBookRequest, id)
     if book:
@@ -311,9 +306,9 @@ async def delete_manual(
 @router.post("/refresh/{asin}")
 async def refresh_source(
     asin: str,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     background_task: BackgroundTasks,
     force_refresh: bool = False,
+    user: DetailedUser = Security(ABRAuth()),
 ):
     # causes the sources to be placed into cache once they're done
     with open_session() as session:
@@ -333,12 +328,10 @@ async def refresh_source(
 async def list_sources(
     request: Request,
     asin: str,
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
     only_body: bool = False,
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     try:
         prowlarr_config.raise_if_invalid(session)
@@ -376,11 +369,9 @@ async def download_book(
     asin: str,
     guid: Annotated[str, Form()],
     indexer_id: Annotated[int, Form()],
-    admin_user: Annotated[
-        DetailedUser, Depends(get_authenticated_user(GroupEnum.admin))
-    ],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
     try:
         resp = await start_download(
@@ -409,9 +400,9 @@ async def download_book(
 async def start_auto_download(
     request: Request,
     asin: str,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user(GroupEnum.trusted))],
     session: Annotated[Session, Depends(get_session)],
     client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: DetailedUser = Security(ABRAuth(GroupEnum.trusted)),
 ):
     download_error: Optional[str] = None
     try:

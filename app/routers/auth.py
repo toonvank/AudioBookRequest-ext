@@ -6,16 +6,25 @@ from urllib.parse import urlencode, urljoin
 
 import jwt
 from aiohttp import ClientSession
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    Security,
+    status,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
 from app.internal.auth.authentication import (
+    ABRAuth,
     DetailedUser,
     RequiresLoginException,
     authenticate_user,
     create_user,
-    get_authenticated_user,
 )
 from app.internal.auth.config import auth_config
 from app.internal.auth.login_types import LoginTypeEnum
@@ -45,7 +54,7 @@ async def login(
         backup = False
 
     try:
-        await get_authenticated_user()(request, session)
+        await ABRAuth()(request, session)
         # already logged in
         return BaseUrlRedirectResponse(redirect_uri)
     except (HTTPException, RequiresLoginException):
@@ -99,8 +108,8 @@ async def login(
 @router.post("/logout")
 async def logout(
     request: Request,
-    user: Annotated[DetailedUser, Depends(get_authenticated_user())],
     session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth()),
 ):
     request.session["sub"] = ""
 
