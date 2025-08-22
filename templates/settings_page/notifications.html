@@ -6,7 +6,7 @@
 {% block content %}
 <div class="flex flex-col">
   <h2 class="text-lg">Notifications</h2>
-  <form id="add-notification-form" class="flex flex-col gap-2" hx-post="{{ base_url }}/settings/notification"
+  <form id="add-notification-form" class="flex flex-col gap-2" hx-post="{{ base_url }}/settings/notifications"
     hx-target="#notification-list" hx-swap="outerHTML"
     hx-on::after-request="if (event.detail.successful && event.detail.target?.id === 'notification-list') this.reset()"
     x-data="{ body_type: '{{ body_types[0] }}' }">
@@ -92,7 +92,7 @@
           <td>{{ n.event.value }}</td>
           <td>{{ n.url }}</td>
           <td class="grid grid-cols-2 min-w-[8rem] gap-1">
-            <button title="Test" class="btn btn-square" hx-post="{{ base_url }}/settings/notification/{{ n.id }}"
+            <button title="Test" class="btn btn-square" hx-post="{{ base_url }}/settings/notifications/{{ n.id }}"
               hx-disabled-elt="this">{% include "icons/test-pipe.html" %}</button>
             <button title="Edit" class="btn btn-square"
               x-on:click="edit === '{{ n.id }}' ?edit=null: edit='{{ n.id }}'">
@@ -100,7 +100,7 @@
             </button>
             <button title="{{ 'Enabled' if n.enabled else 'Disabled' }}"
               class="btn btn-square {{ 'btn-success' if n.enabled else 'btn-error' }}"
-              hx-patch="{{ base_url }}/settings/notification/{{ n.id }}/enable" hx-disabled-elt="this"
+              hx-patch="{{ base_url }}/settings/notifications/{{ n.id }}/enable" hx-disabled-elt="this"
               hx-target="#notification-list" hx-swap="outerHTML">
               {% if n.enabled %}
               <span>{% include "icons/checkmark.html" %}</span>
@@ -109,7 +109,7 @@
               {% endif %}
             </button>
             <button title="Delete" class="btn btn-error btn-square"
-              hx-delete="{{ base_url }}/settings/notification/{{ n.id }}" hx-target="#notification-list"
+              hx-delete="{{ base_url }}/settings/notifications/{{ n.id }}" hx-target="#notification-list"
               hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this notification? ({{ n.name }})">
               {% include "icons/trash.html" %}
             </button>
@@ -124,7 +124,7 @@
   <template x-if="edit === '{{ n.id }}'">
     <form
       x-data="{ name: {{ n.name|toJSstring }}, event: {{ n.event.value|toJSstring }}, body_type: {{ n.body_type.value|toJSstring }}, url: {{ n.url|toJSstring }}, headers: {{ n.serialized_headers|toJSstring }}, body: {{ n.body|toJSstring }} }"
-      class="flex flex-col gap-2" hx-put="{{ base_url }}/settings/notification/{{ n.id }}"
+      class="flex flex-col gap-2" hx-put="{{ base_url }}/settings/notifications/{{ n.id }}"
       hx-target="#notification-list" hx-swap="outerHTML" id="edit-notification-form">
       {{ n.name }}
       <label for="name-edit">

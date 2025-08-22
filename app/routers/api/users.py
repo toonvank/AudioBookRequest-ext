@@ -1,6 +1,6 @@
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, Security, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Security, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
@@ -13,7 +13,7 @@ from app.internal.auth.authentication import (
 from app.internal.models import GroupEnum, User
 from app.util.db import get_session
 
-router = APIRouter(prefix="/api", tags=["API"])
+router = APIRouter(prefix="/users", tags=["Users"])
 
 
 class UserResponse(BaseModel):
@@ -53,12 +53,7 @@ class UsersListResponse(BaseModel):
     total: int = Field(..., description="Total number of users")
 
 
-@router.get("/health", tags=["System"])
-def health_check():
-    return Response(status_code=200)
-
-
-@router.get("/users", response_model=UsersListResponse, tags=["Users"])
+@router.get("/", response_model=UsersListResponse)
 def list_users(
     session: Annotated[Session, Depends(get_session)],
     current_user: DetailedUser = Security(APIKeyAuth(GroupEnum.admin)),
@@ -82,7 +77,7 @@ def list_users(
     )
 
 
-@router.get("/users/me", response_model=UserResponse, tags=["Users"])
+@router.get("/me", response_model=UserResponse)
 def get_current_user(
     current_user: DetailedUser = Security(APIKeyAuth()),
 ):
@@ -94,7 +89,7 @@ def get_current_user(
     return UserResponse.from_user(current_user)
 
 
-@router.get("/users/{username}", response_model=UserResponse, tags=["Users"])
+@router.get("/{username}", response_model=UserResponse)
 def get_user(
     username: str,
     session: Annotated[Session, Depends(get_session)],
@@ -115,12 +110,7 @@ def get_user(
     return UserResponse.from_user(user)
 
 
-@router.post(
-    "/users",
-    response_model=UserResponse,
-    status_code=status.HTTP_201_CREATED,
-    tags=["Users"],
-)
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_new_user(
     user_data: UserCreate,
     session: Annotated[Session, Depends(get_session)],
@@ -160,7 +150,7 @@ def create_new_user(
     return UserResponse.from_user(user)
 
 
-@router.put("/users/{username}", response_model=UserResponse, tags=["Users"])
+@router.put("/{username}", response_model=UserResponse)
 def update_user(
     username: str,
     user_data: UserUpdate,
@@ -207,9 +197,7 @@ def update_user(
     return UserResponse.from_user(user)
 
 
-@router.delete(
-    "/users/{username}", status_code=status.HTTP_204_NO_CONTENT, tags=["Users"]
-)
+@router.delete("/{username}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
     username: str,
     session: Annotated[Session, Depends(get_session)],

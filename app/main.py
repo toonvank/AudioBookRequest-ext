@@ -37,6 +37,7 @@ app = FastAPI(
     title="AudioBookRequest",
     debug=Settings().app.debug,
     openapi_url="/openapi.json" if Settings().app.openapi_enabled else None,
+    description="API for AudiobookRequest",
     middleware=[
         Middleware(DynamicSessionMiddleware, auth_secret, middleware_linker),
         Middleware(GZipMiddleware),
@@ -44,12 +45,13 @@ app = FastAPI(
     root_path=Settings().app.base_url.rstrip("/"),
 )
 
+app.include_router(auth.router, include_in_schema=False)
+app.include_router(root.router, include_in_schema=False)
+app.include_router(search.router, include_in_schema=False)
+app.include_router(settings.router, include_in_schema=False)
+app.include_router(wishlist.router, include_in_schema=False)
+# api router under /api
 app.include_router(api.router)
-app.include_router(auth.router)
-app.include_router(root.router)
-app.include_router(search.router)
-app.include_router(settings.router)
-app.include_router(wishlist.router)
 
 user_exists = False
 

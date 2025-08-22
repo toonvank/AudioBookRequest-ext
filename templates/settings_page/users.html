@@ -11,7 +11,7 @@
   {% endif %}
   <form id="create-user-form"
         class="flex flex-col gap-2"
-        hx-post="{{ base_url }}/settings/user"
+        hx-post="{{ base_url }}/settings/users"
         hx-target="#user-list"
         hx-on::after-request="if (event.detail.successful && event.detail.target?.id === 'user-list') this.reset()"
         hx-swap="outerHTML"
@@ -68,7 +68,7 @@
                           class="select w-full"
                           required
                           {% if u.root %}disabled{% endif %}
-                          hx-patch="{{ base_url }}/settings/user/{{ u.username }}"
+                          hx-patch="{{ base_url }}/settings/users/{{ u.username }}"
                           hx-trigger="change"
                           hx-disabled-elt="this"
                           hx-target="#user-list"
@@ -98,7 +98,7 @@
                       <form method="dialog" class="flex justify-between">
                         <button class="btn">Cancel</button>
                         <button class="btn bg-primary"
-                                hx-delete="{{ base_url }}/settings/user/{{ u.username }}"
+                                hx-delete="{{ base_url }}/settings/users/{{ u.username }}"
                                 hx-disabled-elt="this"
                                 hx-target="#user-list"
                                 hx-swap="outerHTML">Delete</button>
