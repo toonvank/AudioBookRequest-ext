@@ -1,4 +1,4 @@
-from typing import Annotated, Optional
+from typing import Annotated, Any, Mapping, Optional
 
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, Form, Request, Security
@@ -43,13 +43,11 @@ async def read_indexers(
     )
 
 
-@router.post("/")
-async def update_indexers(
-    request: Request,
-    indexer_select: Annotated[str, Form()],
-    session: Annotated[Session, Depends(get_session)],
-    client_session: Annotated[ClientSession, Depends(get_connection)],
-    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
+async def update_single_indexer(
+    indexer_select: str,
+    values: Mapping[str, Any],
+    session: Session,
+    client_session: ClientSession,
 ):
     contexts = await get_indexer_contexts(
         SessionContainer(session=session, client_session=client_session),
@@ -66,15 +64,14 @@ async def update_indexers(
     if not updated_context:
         raise ToastException("Indexer not found", "error")
 
-    form_values = await request.form()
-
     for key, context in updated_context.configuration.items():
-        value = form_values.get(key)
-        if value is None:  # forms do not include false checkboxes
+        value = values.get(key)
+        if value is None:
+            # forms do not include false checkboxes, so we handle missing booleans as false
             if context.type is bool:
                 value = False
             else:
-                logger.error("Value is missing for key", key=key)
+                logger.warning("Value is missing for key", key=key)
                 continue
         if context.type is bool:
             indexer_configuration_cache.set_bool(session, key, value == "on")
@@ -82,5 +79,21 @@ async def update_indexers(
             indexer_configuration_cache.set(session, key, str(value))
 
     flush_prowlarr_cache()
+
+
+@router.post("/")
+async def update_indexers(
+    request: Request,
+    indexer_select: Annotated[str, Form()],
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
+):
+    await update_single_indexer(
+        indexer_select,
+        await request.form(),
+        session,
+        client_session,
+    )
 
     raise ToastException("Indexers updated", "success")

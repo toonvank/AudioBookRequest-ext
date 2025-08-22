@@ -1,6 +1,22 @@
 {% extends "settings_page/base.html" %}
 {% block head %}
   <title>Settings - Account</title>
+  <script>
+    let beingCopied = false;
+    function copyAPIKey(apiKey) {
+      if (beingCopied) return;
+      beingCopied = true;
+      navigator.clipboard.writeText(apiKey);
+      const copiedText = document.getElementById('copy-button');
+      copiedText.classList.add('btn-success');
+      copiedText.textContent = 'Copied!';
+      setTimeout(() => {
+        copiedText.classList.remove('btn-success');
+        copiedText.textContent = 'Copy';
+        beingCopied = false;
+      }, 2000);
+    }
+  </script>
 {% endblock head %}
 {% block content %}
   <div class="flex flex-col gap-6">
@@ -60,24 +76,8 @@
           <div class="flex gap-2">
             <code class="bg-base-200 p-2 rounded flex-1">{{ new_api_key }}</code>
             <div class="relative">
-              <button id="copy-button" onclick="copyAPIKey()" class="btn text-xs transition-all duration-500 min-w-20">
+              <button id="copy-button" onclick="copyAPIKey('{{ new_api_key }}')" class="btn text-xs transition-all duration-500 min-w-20">
                 Copy
-                <script>
-                  let beingCopied = false;
-                  function copyAPIKey() {
-                    if (beingCopied) return;
-                    beingCopied = true;
-                    navigator.clipboard.writeText('{{ new_api_key }}');
-                    const copiedText = document.getElementById('copy-button');
-                    copiedText.classList.add('btn-success');
-                    copiedText.textContent = 'Copied!';
-                    setTimeout(() => { 
-                      copiedText.classList.remove('btn-success');
-                      copiedText.textContent = 'Copy';
-                      beingCopied = false;
-                    }, 2000);
-                  }
-                </script>
               </button>
             </div>
           </div>

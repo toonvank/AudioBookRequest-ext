@@ -71,7 +71,7 @@ def create_valued_configuration(
 ) -> ValuedConfigurations:
     """
     Using a configuration class, it retrieves the values from
-    the cache/db and handle setting the default values as well
+    the cache/db and handles assigning the default values as well
     as raising exceptions for required fields.
     """
 

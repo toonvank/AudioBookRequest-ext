@@ -17,9 +17,9 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 
 class UserResponse(BaseModel):
-    username: str = Field(..., description="Unique username")
-    group: GroupEnum = Field(..., description="User group determining permissions")
-    root: bool = Field(..., description="Whether this is the root admin user")
+    username: str = Field(description="Unique username")
+    group: GroupEnum = Field(description="User group determining permissions")
+    root: bool = Field(description="Whether this is the root admin user")
 
     @classmethod
     def from_user(cls, user: User) -> "UserResponse":
@@ -31,10 +31,8 @@ class UserResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
-    username: str = Field(
-        ..., min_length=1, max_length=100, description="Unique username"
-    )
-    password: str = Field(..., min_length=1, description="User password")
+    username: str = Field(min_length=1, max_length=100, description="Unique username")
+    password: str = Field(min_length=1, description="User password")
     group: GroupEnum = Field(
         GroupEnum.untrusted, description="User group (untrusted, trusted, admin)"
     )
@@ -49,8 +47,8 @@ class UserUpdate(BaseModel):
 
 
 class UsersListResponse(BaseModel):
-    users: List[UserResponse] = Field(..., description="List of users")
-    total: int = Field(..., description="Total number of users")
+    users: List[UserResponse] = Field(description="List of users")
+    total: int = Field(description="Total number of users")
 
 
 @router.get("/", response_model=UsersListResponse)

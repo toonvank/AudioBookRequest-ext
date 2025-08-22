@@ -25,6 +25,8 @@ async def get_indexer_contexts(
     check_required: bool = True,
     return_disabled: bool = False,
 ) -> list[IndexerContext]:
+    """Builds the configuration contexts with default values and types of each value filled in for all indexers."""
+
     contexts: list[IndexerContext] = []
     for Indexer in indexers:
         try:
