@@ -96,6 +96,7 @@ prowlarr_indexer_cache = SimpleCache[Indexer, str]()
 
 
 def flush_prowlarr_cache():
+    logger.info("Flushing prowlarr caches")
     prowlarr_source_cache.flush()
     prowlarr_indexer_cache.flush()
 

@@ -51,7 +51,7 @@ def clear_old_book_caches(session: Session):
     )
     result: CursorResult = session.execute(delete_query)  # type: ignore[reportDeprecated]
     session.commit()
-    logger.info("Cleared old book caches", rowcount=result.rowcount)
+    logger.debug("Cleared old book caches", rowcount=result.rowcount)
 
 
 def get_region_from_settings() -> audible_region_type:
