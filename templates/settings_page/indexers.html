@@ -14,6 +14,11 @@
       {% for ctxt in indexers %}<option value="{{ ctxt.indexer.name }}">{{ ctxt.indexer.name }}</option>{% endfor %}
     </select>
     {% for ctxt in indexers %}
+    <label for="{{ key }}">
+      Enable Indexer
+    </label>
+    <input id="enabled-checkbox" name="enabled" type="checkbox" class="checkbox" {% if ctxt.enabled %}checked{% endif
+      %} />
     <template x-if="selected === '{{ ctxt.indexer.name }}'">
       <div class="contents">
         {% for key, config in ctxt.configuration.items() %}

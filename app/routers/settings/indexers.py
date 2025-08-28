@@ -17,6 +17,7 @@ from app.internal.prowlarr.prowlarr import flush_prowlarr_cache
 from app.util.cache import StringConfigCache
 from app.util.connection import get_connection
 from app.util.db import get_session, open_session
+from app.util.json_type import get_bool
 from app.util.log import logger
 from app.util.templates import template_response
 from app.util.toast import ToastException
@@ -26,11 +27,11 @@ indexer_config = StringConfigCache[IndexerConfigKey]()
 last_modified = 0
 
 
-async def check_file_changes():
+async def check_indexer_file_changes():
     with open_session() as session:
         async with ClientSession() as client_session:
             try:
-                await read_indexer_configuration(session, client_session)
+                await read_indexer_file(session, client_session)
             except Exception as e:
                 logger.error("Failed to read indexer configuration file", error=str(e))
 
@@ -38,7 +39,7 @@ async def check_file_changes():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(check_file_changes, "interval", seconds=15)  # pyright: ignore[reportUnknownMemberType]
+    scheduler.add_job(check_indexer_file_changes, "interval", seconds=15)  # pyright: ignore[reportUnknownMemberType]
     scheduler.start()  # pyright: ignore[reportUnknownMemberType]
     yield
     scheduler.shutdown()  # pyright: ignore[reportUnknownMemberType]
@@ -53,10 +54,9 @@ async def update_single_indexer(
     session: Session,
     client_session: ClientSession,
 ):
+    session_container = SessionContainer(session=session, client_session=client_session)
     contexts = await get_indexer_contexts(
-        SessionContainer(session=session, client_session=client_session),
-        check_required=False,
-        return_disabled=True,
+        session_container, check_required=False, return_disabled=True
     )
 
     updated_context: Optional[IndexerContext] = None
@@ -82,10 +82,18 @@ async def update_single_indexer(
         else:
             indexer_configuration_cache.set(session, key, str(value))
 
+    if "enabled" in values:
+        logger.debug("Setting enabled state", enabled=values["enabled"])
+        enabled = get_bool(values["enabled"]) or False
+        await updated_context.indexer.set_enabled(
+            session_container,
+            enabled,
+        )
+
     flush_prowlarr_cache()
 
 
-async def read_indexer_configuration(
+async def read_indexer_file(
     session: Session, client_session: ClientSession, *, file_path: Optional[str] = None
 ):
     if not file_path:
@@ -136,9 +144,7 @@ async def read_indexers(
     file_path = indexer_config.get(session, "indexers_configuration_file")
     if file_path:
         try:
-            await read_indexer_configuration(
-                session, client_session, file_path=file_path
-            )
+            await read_indexer_file(session, client_session, file_path=file_path)
         except Exception as e:
             logger.warning(
                 "Failed to read indexer configuration file. Ignoring.", error=str(e)
@@ -173,7 +179,7 @@ async def read_file_configuration(
         indexer_configuration_cache.set(session, "indexers_configuration_file", "")
         raise ToastException("Configuration file cleared", "success")
     try:
-        await read_indexer_configuration(session, client_session, file_path=file_path)
+        await read_indexer_file(session, client_session, file_path=file_path)
     except Exception as e:
         logger.error("Failed to read indexer configuration file", error=str(e))
         raise ToastException(str(e), "error")
@@ -191,10 +197,12 @@ async def update_indexers(
     client_session: Annotated[ClientSession, Depends(get_connection)],
     admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
+    values = dict(await request.form())
+    values["enabled"] = values.get("enabled", "off")  # handle missing checkbox
     try:
         await update_single_indexer(
             indexer_select,
-            await request.form(),
+            values,
             session,
             client_session,
         )

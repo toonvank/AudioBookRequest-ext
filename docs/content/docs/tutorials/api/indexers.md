@@ -27,19 +27,15 @@ This will give you something along the lines of this:
       "default": null,
       "required": true,
       "type": "str"
-    },
-    {
-      "name": "mam_active",
-      "description": null,
-      "default": "True",
-      "required": false,
-      "type": "bool"
     }
   ]
 }
 ```
 
 This gives you the full information about what values can be adjusted.
+
+**(Optional)** You can additionally enable/disable an indexer by setting the
+`enabled` value to `true` or `false`.
 
 ## Updating Indexer Settings
 
@@ -54,5 +50,5 @@ curl -X 'PATCH' \
     'https://abr.example.com/api/indexers/MyAnonamouse' \
     -H 'accept: application/json' \
     -H 'Authorization: Bearer MaEqMYAGY3qvXxtje6-YDxcs4damlyRaKzTC8itG2b8' \
-    -d '{"mam_session_id":"bXDv1tC1d2MVvOypbFy8Q4Q-rz6q-bKwdqaSZzm85Dg"}'
+    -d '{"mam_session_id":"bXDv1tC1d2MVvOypbFy8Q4Q-rz6q-bKwdqaSZzm85Dg", "enabled": true}'
 ```

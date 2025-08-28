@@ -24,16 +24,10 @@ class MamConfigurations(Configurations):
         display_name="MAM Session ID",
         required=True,
     )
-    mam_active: IndexerConfiguration[bool] = IndexerConfiguration(
-        type=bool,
-        display_name="MAM Active",
-        default=True,
-    )
 
 
 class ValuedMamConfigurations(ValuedConfigurations):
     mam_session_id: str
-    mam_active: bool
 
 
 class MamIndexer(AbstractIndexer[MamConfigurations]):
@@ -46,20 +40,13 @@ class MamIndexer(AbstractIndexer[MamConfigurations]):
     ) -> MamConfigurations:
         return MamConfigurations()
 
-    async def is_active(
-        self,
-        container: SessionContainer,
-        configurations: ValuedMamConfigurations,
-    ) -> bool:
-        return configurations.mam_active
-
     async def setup(
         self,
         request: BookRequest,
         container: SessionContainer,
         configurations: ValuedMamConfigurations,
     ):
-        if not configurations.mam_active:
+        if not await self.is_enabled(container, configurations):
             return
 
         params: dict[str, Any] = {

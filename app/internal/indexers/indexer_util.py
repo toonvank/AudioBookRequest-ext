@@ -17,6 +17,7 @@ class IndexerContext(BaseModel, arbitrary_types_allowed=True):
     indexer: AbstractIndexer[Any]
     configuration: dict[str, IndexerConfiguration[Any]]
     valued: ValuedConfigurations
+    enabled: bool
 
 
 async def get_indexer_contexts(
@@ -44,9 +45,9 @@ async def get_indexer_contexts(
 
             indexer = Indexer()
 
-            if not return_disabled and not await indexer.is_active(
-                container, valued_configuration
-            ):
+            indexer_enabled = await indexer.is_enabled(container, valued_configuration)
+
+            if not return_disabled and not indexer_enabled:
                 logger.debug("Indexer is disabled", name=Indexer.name)
                 continue
 
@@ -55,6 +56,7 @@ async def get_indexer_contexts(
                     indexer=indexer,
                     configuration=filtered_configuration,
                     valued=valued_configuration,
+                    enabled=indexer_enabled,
                 )
             )
         except ConfigurationException as e:

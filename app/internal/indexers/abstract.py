@@ -5,7 +5,10 @@ from aiohttp import ClientSession
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from app.internal.indexers.configuration import Configurations
+from app.internal.indexers.configuration import (
+    Configurations,
+    indexer_configuration_cache,
+)
 from app.internal.models import BookRequest, ProwlarrSource
 
 
@@ -28,8 +31,7 @@ class AbstractIndexer[T: Configurations](ABC):
         """
         pass
 
-    @abstractmethod
-    async def is_active(
+    async def is_enabled(
         self,
         container: SessionContainer,
         configurations: Any,
@@ -37,7 +39,17 @@ class AbstractIndexer[T: Configurations](ABC):
         """
         Returns true if the indexer is active and can be used.
         """
-        pass
+        enabled_key = f"{self.name}_enabled"
+        enabled = indexer_configuration_cache.get_bool(container.session, enabled_key)
+        return enabled or False
+
+    async def set_enabled(
+        self,
+        container: SessionContainer,
+        enabled: bool,
+    ) -> None:
+        enabled_key = f"{self.name}_enabled"
+        indexer_configuration_cache.set_bool(container.session, enabled_key, enabled)
 
     @abstractmethod
     async def setup(
