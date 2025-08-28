@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.1](https://github.com/markbeep/AudioBookRequest/compare/v1.6.0...v1.6.1) (2025-08-28)
+
+
+### Bug Fixes
+
+* ignore missing booleans on REST api/local file indexer configs ([be3b9c5](https://github.com/markbeep/AudioBookRequest/commit/be3b9c54e54ad1cfb59931cac7a10bca0bb8e6c4))
+
+
+### Code Refactoring
+
+* separate 'enabled' logic of indexers ([5b24705](https://github.com/markbeep/AudioBookRequest/commit/5b24705f96bdb93a0a78149d9a7485c6c2e89096))
+
 ## [1.6.0](https://github.com/markbeep/AudioBookRequest/compare/v1.5.3...v1.6.0) (2025-08-22)
 
 
