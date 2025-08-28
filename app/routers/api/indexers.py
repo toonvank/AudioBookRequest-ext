@@ -38,6 +38,7 @@ async def update_indexer(
             await request.json(),
             session,
             client_session,
+            ignore_missing_booleans=True,
         )
     except ToastException as e:
         logger.error(f"Error updating indexer {indexer}: {e.message}")

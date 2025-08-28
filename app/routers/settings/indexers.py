@@ -53,7 +53,14 @@ async def update_single_indexer(
     values: Mapping[str, Any],
     session: Session,
     client_session: ClientSession,
+    ignore_missing_booleans: bool = False,
 ):
+    """
+    Update a single indexer with the given values.
+
+    `ignore_missing_booleans` can be set to true to ignore missing boolean values. By default, missing booleans are treated as false.
+    """
+
     session_container = SessionContainer(session=session, client_session=client_session)
     contexts = await get_indexer_contexts(
         session_container, check_required=False, return_disabled=True
@@ -72,7 +79,7 @@ async def update_single_indexer(
         value = values.get(key)
         if value is None:
             # forms do not include false checkboxes, so we handle missing booleans as false
-            if context.type is bool:
+            if context.type is bool and not ignore_missing_booleans:
                 value = False
             else:
                 logger.warning("Value is missing for key", key=key)
@@ -126,6 +133,7 @@ async def read_indexer_file(
             indexer_values,
             session,
             client_session,
+            ignore_missing_booleans=True,
         )
 
     logger.info(
