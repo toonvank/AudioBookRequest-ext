@@ -87,7 +87,7 @@ In the case of an OIDC misconfiguration, i.e. changing a setting like your clien
 ### Environment Variables
 
 | ENV                           | Description                                                                                                                                                                                                                                                  | Default   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- | --- | --- |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
 | `ABR_APP__PORT`               | The port to run the server on.                                                                                                                                                                                                                               | 8000      |
 | `ABR_APP__DEBUG`              | If to enable debug mode. Not recommended for production.                                                                                                                                                                                                     | false     |
 | `ABR_APP__OPENAPI_ENABLED`    | If set to `true`, enables an OpenAPI specs page on `/docs`.                                                                                                                                                                                                  | false     |
@@ -98,7 +98,7 @@ In the case of an OIDC misconfiguration, i.e. changing a setting like your clien
 | `ABR_APP__DEFAULT_REGION`     | Default audible region to use for the search. Has to be one of `us, ca, uk, au, fr, de, jp, it, in, es, br`.                                                                                                                                                 | us        |
 | `ABR_APP__FORCE_LOGIN_TYPE`   | Forces the login type and prevents it from being modified. Can be one of `basic`, `forms`, `oidc`, or `none` to disable the login. `oidc` requires both the `ABR_APP__INIT_ROOT_USERNAME` and `ABR_APP__INIT_ROOT_PASSWORD` environment variables to be set. |           |
 | `ABR_APP__INIT_ROOT_USERNAME` | Sets the initial username of the root user when first launching ABR. Has no effect if a root admin already exists.                                                                                                                                           |           |
-| `ABR_APP__INIT_ROOT_PASSWORD` | Sets the initial password of the root user when first launching ABR. Has no effect if a root admin already exists.                                                                                                                                           |           |     | us  |
+| `ABR_APP__INIT_ROOT_PASSWORD` | Sets the initial password of the root user when first launching ABR. Has no effect if a root admin already exists.                                                                                                                                           | us        |
 
 ---
 
