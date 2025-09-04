@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.6.2](https://github.com/markbeep/AudioBookRequest/compare/v1.6.1...v1.6.2) (2025-09-04)
+
+
+### Bug Fixes
+
+* html duplicating when changing account password ([8d86aa1](https://github.com/markbeep/AudioBookRequest/commit/8d86aa13a166655534838f90243b0a789aac7074))
+* incorrectly redirecting from https to http ([9c6a002](https://github.com/markbeep/AudioBookRequest/commit/9c6a00258dd9d583913480afee42cde276f49eed)), closes [#140](https://github.com/markbeep/AudioBookRequest/issues/140)
+
+
+### Miscellaneous Chores
+
+* fix readme table ([7822f12](https://github.com/markbeep/AudioBookRequest/commit/7822f12b3807df0644e86170326c9a5130d8e6f7))
+
 ## [1.6.1](https://github.com/markbeep/AudioBookRequest/compare/v1.6.0...v1.6.1) (2025-08-28)
 
 
