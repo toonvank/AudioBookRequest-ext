@@ -21,7 +21,7 @@ from app.util.toast import ToastException
 router = APIRouter(prefix="/notifications")
 
 
-@router.get("/")
+@router.get("")
 def read_notifications(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
@@ -132,7 +132,7 @@ def _upsert_notification(
     return _list_notifications(request, session, admin_user)
 
 
-@router.post("/")
+@router.post("")
 def add_notification(
     request: Request,
     name: Annotated[str, Form()],

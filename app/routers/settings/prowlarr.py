@@ -19,7 +19,7 @@ from app.util.templates import template_response
 router = APIRouter(prefix="/prowlarr")
 
 
-@router.get("/")
+@router.get("")
 async def read_prowlarr(
     request: Request,
     session: Annotated[Session, Depends(get_session)],

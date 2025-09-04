@@ -23,7 +23,7 @@ from app.util.toast import ToastException
 router = APIRouter(prefix="/account")
 
 
-@router.get("/")
+@router.get("")
 def read_account(
     request: Request,
     session: Annotated[Session, Depends(get_session)],

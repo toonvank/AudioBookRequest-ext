@@ -12,7 +12,7 @@ from app.util.templates import template_response
 router = APIRouter(prefix="/download")
 
 
-@router.get("/")
+@router.get("")
 def read_download(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
@@ -49,7 +49,7 @@ def read_download(
     )
 
 
-@router.post("/")
+@router.post("")
 def update_download(
     request: Request,
     flac_from: Annotated[float, Form()],
@@ -108,7 +108,7 @@ def update_download(
     )
 
 
-@router.delete("/")
+@router.delete("")
 def reset_download_setings(
     session: Annotated[Session, Depends(get_session)],
     admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),

@@ -142,7 +142,7 @@ async def read_indexer_file(
     )
 
 
-@router.get("/")
+@router.get("")
 async def read_indexers(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
@@ -197,7 +197,7 @@ async def read_file_configuration(
     raise ToastException("Configuration file updated", "success", cause_refresh=True)
 
 
-@router.post("/")
+@router.post("")
 async def update_indexers(
     request: Request,
     indexer_select: Annotated[str, Form()],

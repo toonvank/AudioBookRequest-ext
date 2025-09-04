@@ -19,7 +19,7 @@ from app.util.toast import ToastException
 router = APIRouter(prefix="/users")
 
 
-@router.get("/")
+@router.get("")
 def read_users(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
@@ -39,7 +39,7 @@ def read_users(
     )
 
 
-@router.post("/")
+@router.post("")
 def create_new_user(
     request: Request,
     username: Annotated[str, Form()],

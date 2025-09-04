@@ -43,6 +43,7 @@ app = FastAPI(
         Middleware(GZipMiddleware),
     ],
     root_path=Settings().app.base_url.rstrip("/"),
+    redirect_slashes=False,
 )
 
 app.include_router(auth.router, include_in_schema=False)

@@ -20,7 +20,7 @@ from app.util.toast import ToastException
 router = APIRouter(prefix="/security")
 
 
-@router.get("/")
+@router.get("")
 def read_security(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
@@ -63,7 +63,7 @@ def reset_auth_secret(
     return Response(status_code=204, headers={"HX-Refresh": "true"})
 
 
-@router.post("/")
+@router.post("")
 async def update_security(
     login_type: Annotated[LoginTypeEnum, Form()],
     request: Request,
