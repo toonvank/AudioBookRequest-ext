@@ -67,7 +67,7 @@ def change_password(
         request,
         user,
         {"page": "account", "success": "Password changed"},
-        block_name="content",
+        block_name="change_password",
     )
 
 
