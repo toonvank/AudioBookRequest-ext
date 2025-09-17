@@ -10,23 +10,26 @@ from app.internal.models import (
     ManualBookRequest,
     Notification,
     NotificationBodyTypeEnum,
+    User,
 )
 from app.util import json_type
 from app.util.db import open_session
 from app.util.log import logger
 
 
-def replace_variables(
+def _replace_variables(
     template: str,
-    username: Optional[str] = None,
+    user: Optional[User] = None,
     book_title: Optional[str] = None,
     book_authors: Optional[str] = None,
     book_narrators: Optional[str] = None,
     event_type: Optional[str] = None,
     other_replacements: dict[str, str] = {},
 ):
-    if username:
-        template = template.replace("{eventUser}", username)
+    if user:
+        template = template.replace("{eventUser}", user.username)
+        if user.extra_data:
+            template = template.replace("{eventUserExtraData}", user.extra_data)
     if book_title:
         template = template.replace("{bookTitle}", book_title)
     if book_authors:
@@ -68,7 +71,7 @@ async def _send(
 async def send_notification(
     session: Session,
     notification: Notification,
-    requester_username: Optional[str] = None,
+    requester: Optional[User] = None,
     book_asin: Optional[str] = None,
     other_replacements: dict[str, str] = {},
 ):
@@ -84,9 +87,9 @@ async def send_notification(
             book_authors = ",".join(book.authors)
             book_narrators = ",".join(book.narrators)
 
-    body = replace_variables(
+    body = _replace_variables(
         notification.body,
-        requester_username,
+        requester,
         book_title,
         book_authors,
         book_narrators,
@@ -127,7 +130,7 @@ async def send_notification(
 
 async def send_all_notifications(
     event_type: EventEnum,
-    requester_username: Optional[str] = None,
+    requester: Optional[User] = None,
     book_asin: Optional[str] = None,
     other_replacements: dict[str, str] = {},
 ):
@@ -141,7 +144,7 @@ async def send_all_notifications(
             await send_notification(
                 session=session,
                 notification=notification,
-                requester_username=requester_username,
+                requester=requester,
                 book_asin=book_asin,
                 other_replacements=other_replacements,
             )
@@ -150,7 +153,7 @@ async def send_all_notifications(
 async def send_manual_notification(
     notification: Notification,
     book: ManualBookRequest,
-    requester_username: Optional[str] = None,
+    requester: Optional[User] = None,
     other_replacements: dict[str, str] = {},
 ):
     """Send a notification for manual book requests"""
@@ -158,9 +161,9 @@ async def send_manual_notification(
         book_authors = ",".join(book.authors)
         book_narrators = ",".join(book.narrators)
 
-        body = replace_variables(
+        body = _replace_variables(
             notification.body,
-            requester_username,
+            requester,
             book.title,
             book_authors,
             book_narrators,
@@ -194,6 +197,9 @@ async def send_all_manual_notifications(
     other_replacements: dict[str, str] = {},
 ):
     with open_session() as session:
+        user = session.exec(
+            select(User).where(User.username == book_request.user_username)
+        ).first()
         notifications = session.exec(
             select(Notification).where(
                 Notification.event == event_type, Notification.enabled
@@ -203,6 +209,6 @@ async def send_all_manual_notifications(
             await send_manual_notification(
                 notification=notif,
                 book=book_request,
-                requester_username=book_request.user_username,
+                requester=user,
                 other_replacements=other_replacements,
             )

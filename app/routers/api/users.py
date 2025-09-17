@@ -37,6 +37,9 @@ class UserCreate(BaseModel):
         GroupEnum.untrusted, description="User group (untrusted, trusted, admin)"
     )
     root: bool = Field(False, description="Whether to create as root admin user")
+    extra_data: Optional[str] = Field(
+        None, description="Optional extra data for the user"
+    )
 
 
 class UserUpdate(BaseModel):
@@ -44,6 +47,9 @@ class UserUpdate(BaseModel):
         None, min_length=1, description="New password (optional)"
     )
     group: Optional[GroupEnum] = Field(None, description="New user group (optional)")
+    extra_data: Optional[str] = Field(
+        None, description="Optional extra data for the user"
+    )
 
 
 class UsersListResponse(BaseModel):
@@ -140,6 +146,7 @@ def create_new_user(
         password=user_data.password,
         group=user_data.group,
         root=user_data.root,
+        extra_data=user_data.extra_data,
     )
 
     session.add(user)
@@ -183,7 +190,9 @@ def update_user(
                 detail=e.detail,
             )
 
-        updated_user = create_user(username, user_data.password, user.group)
+        updated_user = create_user(
+            username, user_data.password, user.group, extra_data=user.extra_data
+        )
         user.password = updated_user.password
 
     if user_data.group is not None:

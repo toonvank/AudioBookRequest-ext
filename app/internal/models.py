@@ -27,6 +27,7 @@ class User(BaseModel, table=True):
         sa_column_kwargs={"server_default": "untrusted"},
     )
     root: bool = False
+    extra_data: Optional[str] = None
 
     # TODO: Add last_login
     # last_login: datetime = Field(

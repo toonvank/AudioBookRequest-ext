@@ -177,9 +177,15 @@ async def update_downloaded(
     background_task: BackgroundTasks,
     admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
 ):
-    books = session.exec(select(BookRequest).where(BookRequest.asin == asin)).all()
-    requested_by = [book.user_username for book in books if book.user_username]
-    for book in books:
+    books = session.exec(
+        select(BookRequest, User)
+        .join(User, isouter=True)
+        .where(BookRequest.asin == asin)
+    ).all()
+
+    requested_by = [User.model_validate(user) for [_, user] in books if user]
+
+    for [book, _] in books:
         book.downloaded = True
         session.add(book)
     session.commit()
@@ -188,7 +194,7 @@ async def update_downloaded(
         background_task.add_task(
             send_all_notifications,
             event_type=EventEnum.on_successful_download,
-            requester_username=", ".join(requested_by),
+            requester=requested_by[0],  # TODO: support multiple requesters
             book_asin=asin,
         )
 
@@ -254,7 +260,7 @@ async def downloaded_manual(
         background_task.add_task(
             send_all_manual_notifications,
             event_type=EventEnum.on_successful_download,
-            book_request=book_request,
+            book_request=ManualBookRequest.model_validate(book_request),
         )
 
     books = _get_all_manual_requests(session, admin_user)
@@ -319,7 +325,7 @@ async def refresh_source(
                 session=session,
                 client_session=client_session,
                 force_refresh=force_refresh,
-                requester_username=user.username,
+                requester=User.model_validate(user),
             )
     return Response(status_code=202)
 
@@ -344,7 +350,7 @@ async def list_sources(
         asin,
         session=session,
         client_session=client_session,
-        requester_username=admin_user.username,
+        requester=admin_user,
         only_return_if_cached=not only_body,  # on initial load we want to respond quickly
     )
 
@@ -379,7 +385,7 @@ async def download_book(
             client_session=client_session,
             guid=guid,
             indexer_id=indexer_id,
-            requester_username=admin_user.username,
+            requester=admin_user,
             book_asin=asin,
         )
     except ProwlarrMisconfigured as e:
@@ -411,7 +417,7 @@ async def start_auto_download(
             start_auto_download=True,
             session=session,
             client_session=client_session,
-            requester_username=user.username,
+            requester=user,
         )
     except HTTPException as e:
         download_error = e.detail

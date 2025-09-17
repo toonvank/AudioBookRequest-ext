@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Security
 from sqlmodel import Session, select
@@ -113,24 +113,40 @@ def delete_user(
 def update_user(
     request: Request,
     username: str,
-    group: Annotated[GroupEnum, Form()],
     session: Annotated[Session, Depends(get_session)],
     admin_user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
+    group: Annotated[Optional[GroupEnum], Form()] = None,
+    extra_data: Annotated[Optional[str], Form()] = None,
 ):
+    
+    updated: list[str] = []
     user = session.exec(select(User).where(User.username == username)).one_or_none()
-    if user and user.root:
-        raise ToastException("Cannot change root user's group", "error")
-
     if user:
-        user.group = group
+        if extra_data is not None:
+            updated.append("extra data")
+            user.extra_data = extra_data.strip() if extra_data.strip() != "" else None
+        if group is not None:
+            if user.root:
+                raise ToastException("Cannot change root user's group", "error")
+            user.group = group
+            updated.append("group")
         session.add(user)
         session.commit()
+
+    if not updated:
+        success_msg = "No changes made"
+    elif updated == ["extra data"]:
+        success_msg = "Updated user extra data"
+    elif updated == ["group"]:
+        success_msg = "Updated group"
+    else:
+        success_msg = "Updated user"
 
     users = session.exec(select(User)).all()
     return template_response(
         "settings_page/users.html",
         request,
         admin_user,
-        {"users": users, "success": "Updated user"},
+        {"users": users, "success": success_msg},
         block_name="user_block",
     )

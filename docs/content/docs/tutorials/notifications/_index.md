@@ -46,3 +46,5 @@ one of the following pages:
 - https://discohook.app (`Options>JSON Editor` to export)
 
 ![Discord](discord.png)
+
+**Tip:** Using the `Extra Data` field in the `Settings>Users` tab, you can add the Discord user ID as extra data. Then you can make notifications ping the given user by adding `<@{eventUserExtraData}>` to the notification message.

@@ -17,6 +17,7 @@ from app.internal.models import (
     ProwlarrSource,
     TorrentSource,
     UsenetSource,
+    User,
 )
 from app.internal.notifications import send_all_notifications
 from app.internal.prowlarr.source_metadata import edit_source_metadata
@@ -126,7 +127,7 @@ async def start_download(
     client_session: ClientSession,
     guid: str,
     indexer_id: int,
-    requester_username: str,
+    requester: User,
     book_asin: str,
     prowlarr_source: Optional[ProwlarrSource] = None,
 ) -> ClientResponse:
@@ -153,7 +154,7 @@ async def start_download(
             )
             await send_all_notifications(
                 EventEnum.on_failed_download,
-                requester_username,
+                requester,
                 book_asin,
                 {
                     "errorStatus": str(response.status),
@@ -179,7 +180,7 @@ async def start_download(
         logger.debug("Download successfully started", guid=guid)
         await send_all_notifications(
             EventEnum.on_successful_download,
-            requester_username,
+            requester,
             book_asin,
             additional_replacements,
         )

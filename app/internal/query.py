@@ -7,7 +7,7 @@ from aiohttp import ClientSession
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from app.internal.models import BookRequest, ProwlarrSource
+from app.internal.models import BookRequest, ProwlarrSource, User
 from app.internal.prowlarr.prowlarr import (
     prowlarr_config,
     query_prowlarr,
@@ -44,7 +44,7 @@ async def query_sources(
     asin: str,
     session: Session,
     client_session: ClientSession,
-    requester_username: str,
+    requester: User,
     force_refresh: bool = False,
     start_auto_download: bool = False,
     only_return_if_cached: bool = False,
@@ -87,7 +87,7 @@ async def query_sources(
                 client_session=client_session,
                 guid=ranked[0].guid,
                 indexer_id=ranked[0].indexer_id,
-                requester_username=requester_username,
+                requester=requester,
                 book_asin=asin,
                 prowlarr_source=ranked[0],
             )

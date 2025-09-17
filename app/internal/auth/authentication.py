@@ -88,9 +88,16 @@ def create_user(
     password: str,
     group: GroupEnum = GroupEnum.untrusted,
     root: bool = False,
+    extra_data: Optional[str] = None,
 ) -> User:
     password_hash = ph.hash(password)
-    return User(username=username, password=password_hash, group=group, root=root)
+    return User(
+        username=username,
+        password=password_hash,
+        group=group,
+        root=root,
+        extra_data=extra_data,
+    )
 
 
 def generate_api_key() -> str:
@@ -318,16 +325,14 @@ class ABRAuth(SecurityBase):
             )
             return self.none_user
 
-        self.none_user = session.exec(
+        user = session.exec(
             select(User).where(User.group == GroupEnum.admin).limit(1)
         ).one()
-
-        # Expunge is required to enable the user to be cached across sessions
-        session.expunge(self.none_user)
+        self.none_user = User.model_validate(user)
 
         logger.debug(
             "Using none auth, returning newly fetched admin user",
             username=self.none_user.username,
             group=self.none_user.group,
         )
-        return self.none_user
+        return user

@@ -31,6 +31,7 @@ from app.internal.models import (
     EventEnum,
     GroupEnum,
     ManualBookRequest,
+    User,
 )
 from app.internal.notifications import (
     send_all_manual_notifications,
@@ -139,9 +140,7 @@ async def search_suggestions(
         )
 
 
-async def background_start_query(
-    asin: str, requester_username: str, auto_download: bool
-):
+async def background_start_query(asin: str, requester: User, auto_download: bool):
     with open_session() as session:
         async with ClientSession() as client_session:
             await query_sources(
@@ -149,7 +148,7 @@ async def background_start_query(
                 session=session,
                 client_session=client_session,
                 start_auto_download=auto_download,
-                requester_username=requester_username,
+                requester=requester,
             )
 
 
@@ -181,7 +180,7 @@ async def add_request(
     background_task.add_task(
         send_all_notifications,
         event_type=EventEnum.on_new_request,
-        requester_username=user.username,
+        requester=User.model_validate(user),
         book_asin=asin,
     )
 
@@ -190,7 +189,7 @@ async def add_request(
         background_task.add_task(
             background_start_query,
             asin=asin,
-            requester_username=user.username,
+            requester=User.model_validate(user),
             auto_download=True,
         )
 
@@ -316,14 +315,12 @@ async def add_manual(
             additional_info=info,
         )
     session.add(book_request)
-    session.flush()
-    session.expunge_all()  # so that we can pass down the object without the session
     session.commit()
 
     background_task.add_task(
         send_all_manual_notifications,
         event_type=EventEnum.on_new_request,
-        book_request=book_request,
+        book_request=ManualBookRequest.model_validate(book_request),
     )
 
     auto_download = quality_config.get_auto_download(session)
