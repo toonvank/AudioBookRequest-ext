@@ -2,4 +2,6 @@ FROM node:23-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN apt-get update && apt-get install -y sqlite3 vim
+RUN apt-get update && apt-get install -y sqlite3 vim just
+
+RUN npm install -g rust-just

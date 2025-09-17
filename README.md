@@ -130,6 +130,8 @@ For local development, environment variables can be added to `.env.local` and th
 [Alembic](https://alembic.sqlalchemy.org/en/latest/) is used to create database migrations. Run the following before starting up the application for the first time. It will initialize the directory if non-existant, create the database file as well as execute any required migrations.
 
 ```sh
+just alembic_upgrade # or simply 'just au'
+# or if you don't have 'just':
 uv run alembic upgrade heads
 ```
 
@@ -142,6 +144,8 @@ Running the application is best done in multiple terminals:
 1. Start FastAPI dev mode:
 
 ```sh
+just dev # or simply 'just d'
+# or if you don't have 'just':
 uv run fastapi dev
 ```
 
@@ -150,6 +154,9 @@ Website can be visited at http://localhost:8000.
 2. Install daisyUI and start Tailwindcss watcher. Required for any CSS styling.
 
 ```sh
+just tailwind # or simply 'just tw'
+
+# or if you don't have 'just':
 npm i
 uv run tailwindcss -i static/tw.css -o static/globals.css --watch
 # Alternatively npx can be used to run tailwindcss

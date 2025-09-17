@@ -1,0 +1,22 @@
+# https://just.systems
+
+alias d := dev
+alias m := migrate
+alias cr := create_revision
+alias tw := tailwind
+
+migrate:
+    uv run alembic upgrade heads
+
+create_revision *MESSAGE:
+    uv run alembic revision --autogenerate -m "{{MESSAGE}}"
+
+dev: migrate
+    uv run fastapi dev
+
+tailwind:
+    npx @tailwindcss/cli@4 -i static/tw.css -o static/globals.css --watch
+
+types:
+    uv run pyright app
+    uv run djlint templates/

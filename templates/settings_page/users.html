@@ -70,8 +70,8 @@
               placeholder="Extra data" hx-patch="{{ base_url }}/settings/users/{{ u.username }}"
               hx-trigger="change delay:500ms" hx-disabled-elt="this" hx-target="#user-list" hx-swap="outerHTML" />
           </td>
-          <td {% if u.root %}title="Can't delete the root admin" {% elif u.is_self(user.username)
-            %}title="Can't delete yourself" {% endif %}>
+          <td {% if u.root %}title="Can't delete the root admin" {% elif u.is_self(user.username) %}
+            title="Can't delete yourself" {% endif %}>
             <button class="btn btn-square btn-ghost" onclick="delete_modal_{{ loop.index }}.showModal()" {% if
               u.is_self(user.username) or u.root %}disabled{% endif %}>
               {% include "icons/trash.html" %}
