@@ -11,7 +11,8 @@
 				"charliermarsh.ruff",
 				"tamasfe.even-better-toml",
 				"bradlc.vscode-tailwindcss",
-				"samuelcolvin.jinjahtml"
+				"samuelcolvin.jinjahtml",
+				"yzhang.markdown-all-in-one"
 			]
 		}
 	}

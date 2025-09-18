@@ -12,6 +12,8 @@ If you've heard of Overseer, Ombi, or Jellyseer; this is in the similar vein, <i
 
 ## Table of Contents
 
+- [Motivation](#motivation)
+  - [Features](#features)
 - [Getting Started](#getting-started)
   - [Quick Start](#quick-start)
   - [Basic Usage](#basic-usage)
@@ -28,6 +30,27 @@ If you've heard of Overseer, Ombi, or Jellyseer; this is in the similar vein, <i
   - [Docker Compose](#docker-compose)
 - [Docs](#docs)
 
+# Motivation
+
+AudioBookRequest aims to be a simple and lightweight tool for managing audiobook requests for your media server. It should be easy to set up and use, while integrating nicely with other common tools in the *arr stack. AudioBookRequest serves as as the frontend for you and your friends to easily make audiobook wishlists or create requests in an organized fashion.
+
+It is not intended as a full replacement for Readarr/Chaptarr, but instead intended to be used alongside them.
+
+## Features
+
+- Employs the Audible API to make it easy to search for and request audiobooks.
+- Add manual audiobook requests for any books not available on Audible.
+- Easy user management. Only three assignable groups, made to get out of your way.
+- Automatic downloading of requests. Integrate Prowlarr to use all your existing indexer settings and download clients.
+- Send notifications to your favorite notification service (apprise, gotify, discord, ntfy, etc.).
+- Single image deployment. You can deploy and create your first requests in under 5 minutes.
+- SQLite database by default. (Watch [#137](https://github.com/markbeep/AudioBookRequest/issues/137) for postgres support)
+- Lightweight website. No bulky javascript files, allowing you to use the website even on low bandwidth.
+- Mobile friendly. Search for books for accept requests on the go!
+
+---
+
+
 # Getting Started
 
 AudioBookRequest is intended to be deployed using Docker or Kubernetes. For "bare-metal" deployments, head to the [local development](#Contributing) section.
@@ -41,6 +64,8 @@ docker run -p 8000:8000 -v $(pwd)/config:/config markbeep/audiobookrequest:1
 ```
 
 Then head to http://localhost:8000.
+
+**NOTE:** AudioBookRequest uses the `/config` directory inside the container for storing configs and data. Mount that directory locally somewhere to ensure persistent data across restarts.
 
 ## Basic Usage
 
