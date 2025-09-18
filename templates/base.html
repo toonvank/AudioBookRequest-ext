@@ -25,7 +25,12 @@
     <script>
       const setTheme = theme => {
         if (!theme) {
-          theme = localStorage.getItem("theme") || "nord";
+          theme = localStorage.getItem("theme");
+          if (!theme) {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "night"
+              : "nord";
+          }
         }
         document.documentElement.setAttribute("data-theme", theme);
         localStorage.setItem("theme", theme);
@@ -47,6 +52,7 @@
       };
       const toggleTheme = () => {
         const theme = document.documentElement.getAttribute("data-theme");
+
         const newTheme = theme === "nord" ? "night" : "nord";
         setTheme(newTheme);
       };
