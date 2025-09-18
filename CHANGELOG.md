@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0](https://github.com/markbeep/AudioBookRequest/compare/v1.6.2...v1.7.0) (2025-09-18)
+
+
+### Features
+
+* Add user extra data field. Closes [#145](https://github.com/markbeep/AudioBookRequest/issues/145) ([47d939a](https://github.com/markbeep/AudioBookRequest/commit/47d939a987015dbfd15109aaa11e9a6ee6b8b5b3))
+
+
+### Bug Fixes
+
+* correctly handle initial user creation on forced login-type. Closes [#143](https://github.com/markbeep/AudioBookRequest/issues/143) ([f18fb02](https://github.com/markbeep/AudioBookRequest/commit/f18fb02ba9b50f5fb4399bb13549d2ca1be34a59))
+* use the device preference for the default light/dark mode. Closes [#148](https://github.com/markbeep/AudioBookRequest/issues/148) ([03ec7b3](https://github.com/markbeep/AudioBookRequest/commit/03ec7b3a8335b749037ae9ad0255399e792b9169))
+
+
+### Miscellaneous Chores
+
+* add just for easier commands ([56eb319](https://github.com/markbeep/AudioBookRequest/commit/56eb319ac9c7bf12671da54c0f06d3d6f6c2525b))
+* add motivation/features to readme ([7892ac8](https://github.com/markbeep/AudioBookRequest/commit/7892ac86b403fb41214a1d07f434ad9844460f65))
+* format users.py ([1483f9f](https://github.com/markbeep/AudioBookRequest/commit/1483f9f98d9f2afc8b20ed95d93e88dcf8b36551))
+
 ## [1.6.2](https://github.com/markbeep/AudioBookRequest/compare/v1.6.1...v1.6.2) (2025-09-04)
 
 
