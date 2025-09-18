@@ -118,7 +118,6 @@ def update_user(
     group: Annotated[Optional[GroupEnum], Form()] = None,
     extra_data: Annotated[Optional[str], Form()] = None,
 ):
-    
     updated: list[str] = []
     user = session.exec(select(User).where(User.username == username)).one_or_none()
     if user:

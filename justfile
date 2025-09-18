@@ -19,4 +19,5 @@ tailwind:
 
 types:
     uv run pyright app
-    uv run djlint templates/
+    uv run djlint templates
+    uv run ruff format --check app
