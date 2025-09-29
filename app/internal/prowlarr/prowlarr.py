@@ -171,6 +171,11 @@ async def start_download(
                     client_session, prowlarr_source.download_url
                 ):
                     additional_replacements["torrentInfoHash"] = info_hash
+            elif prowlarr_source.magnet_url and prowlarr_source.protocol == "torrent":
+                info_hash = prowlarr_source.magnet_url.replace("magnet:?", "")
+                info_hash = info_hash.replace("xt=urn:btih:", "")
+                info_hash = info_hash.split("&")[0]
+                additional_replacements["torrentInfoHash"] = info_hash
 
             additional_replacements["sourceSizeMB"] = str(prowlarr_source.size_MB)
             additional_replacements["sourceTitle"] = prowlarr_source.title
