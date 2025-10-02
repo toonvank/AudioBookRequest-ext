@@ -14,10 +14,14 @@ create_revision *MESSAGE:
 dev: migrate
     uv run fastapi dev
 
-tailwind:
+node_modules:
+    npm install
+
+tailwind: node_modules
     npx @tailwindcss/cli@4 -i static/tw.css -o static/globals.css --watch
 
 types:
     uv run pyright app
     uv run djlint templates
     uv run ruff format --check app
+    uv run alembic check
