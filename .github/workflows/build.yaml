@@ -7,6 +7,8 @@ on:
       - "**.html"
       - "**.css"
       - "**.yaml"
+      - "uv.lock"
+      - "package-lock.json"
       - "Dockerfile"
   release:
     types: [created]
@@ -59,7 +61,7 @@ jobs:
           uv run alembic downgrade base
           uv run alembic upgrade heads
           uv run alembic check
-      
+
       - name: Check PSQL Alembic Migrations
         run: |
           uv run alembic upgrade heads
@@ -74,7 +76,6 @@ jobs:
           ABR_DB__POSTGRES_PASSWORD: postgres
           ABR_DB__POSTGRES_DB: postgres
           ABR_DB__USE_POSTGRES: true
-
 
   build:
     needs: test
