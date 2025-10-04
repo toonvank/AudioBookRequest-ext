@@ -70,18 +70,23 @@ async def _get_audnexus_book(
     https://audnex.us/#tag/Books/operation/getBookById
     """
     logger.debug("Fetching book from Audnexus", asin=asin, region=region)
-    async with session.get(
-        f"https://api.audnex.us/books/{asin}?region={region}"
-    ) as response:
-        if not response.ok:
-            logger.warning(
-                "Failed to fetch book from Audnexus",
-                asin=asin,
-                status=response.status,
-                reason=response.reason,
-            )
-            return None
-        book = await response.json()
+    try:
+        async with session.get(
+            f"https://api.audnex.us/books/{asin}?region={region}",
+            headers={"Client-Agent": "audiobookrequest"},
+        ) as response:
+            if not response.ok:
+                logger.warning(
+                    "Failed to fetch book from Audnexus",
+                    asin=asin,
+                    status=response.status,
+                    reason=response.reason,
+                )
+                return None
+            book = await response.json()
+    except Exception as e:
+        logger.error("Exception while fetching book from Audnexus", asin=asin, error=e)
+        return None
     return BookRequest(
         asin=book["asin"],
         title=book["title"],
@@ -103,18 +108,23 @@ async def _get_audimeta_book(
     https://audimeta.de/api-docs/#/book/get_book__asin_
     """
     logger.debug("Fetching book from Audimeta", asin=asin, region=region)
-    async with session.get(
-        f"https://audimeta.de/book/{asin}?region={region}"
-    ) as response:
-        if not response.ok:
-            logger.warning(
-                "Failed to fetch book from Audimeta",
-                asin=asin,
-                status=response.status,
-                reason=response.reason,
-            )
-            return None
-        book = await response.json()
+    try:
+        async with session.get(
+            f"https://audimeta.de/book/{asin}?region={region}",
+            headers={"Client-Agent": "audiobookrequest"},
+        ) as response:
+            if not response.ok:
+                logger.warning(
+                    "Failed to fetch book from Audimeta",
+                    asin=asin,
+                    status=response.status,
+                    reason=response.reason,
+                )
+                return None
+            book = await response.json()
+    except Exception as e:
+        logger.error("Exception while fetching book from Audimeta", asin=asin, error=e)
+        return None
     return BookRequest(
         asin=book["asin"],
         title=book["title"],
@@ -135,10 +145,19 @@ async def get_book_by_asin(
     book = await _get_audimeta_book(session, asin, audible_region)
     if book:
         return book
+    logger.debug(
+        "Audimeta did not have the book, trying Audnexus",
+        asin=asin,
+        region=audible_region,
+    )
     book = await _get_audnexus_book(session, asin, audible_region)
     if book:
         return book
-    logger.warning("Failed to fetch book", asin=asin, region=audible_region)
+    logger.warning(
+        "Did not find the book on both Audnexus and Audimeta",
+        asin=asin,
+        region=audible_region,
+    )
 
 
 class CacheQuery(pydantic.BaseModel, frozen=True):
