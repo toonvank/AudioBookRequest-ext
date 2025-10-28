@@ -203,6 +203,25 @@
         </div>
         {% endif %}
 
+        <!-- In Your Audiobookshelf Library (only when connected) -->
+        {% if abs_library and abs_library|length > 0 %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">🎧 In Your Audiobookshelf Library</h2>
+                <a href="{{ base_url }}/settings/audiobookshelf" class="link link-primary">Manage connection →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in abs_library[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- No Recommendations Fallback -->
         {% if not recommendations.popular and not recommendations.recent and not recommendations.for_you and not recommendations.by_popular_authors %}
         <div class="w-full max-w-7xl text-center py-16">

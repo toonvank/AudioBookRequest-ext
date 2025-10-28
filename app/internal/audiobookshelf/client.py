@@ -75,6 +75,128 @@ async def _abs_search(session: Session, client_session: ClientSession, q: str) -
         return items
 
 
+def _extract_names(list_or_obj: Any) -> list[str]:
+    """Best-effort to extract a list of names from various ABS payload shapes."""
+    if not list_or_obj:
+        return []
+    # Already a list of strings
+    if isinstance(list_or_obj, list) and all(isinstance(x, str) for x in list_or_obj):
+        return list_or_obj
+    # List of objects with name property
+    if isinstance(list_or_obj, list) and all(isinstance(x, dict) for x in list_or_obj):
+        names: list[str] = []
+        for x in list_or_obj:
+            n = x.get("name") or x.get("authorName") or x.get("narratorName")
+            if isinstance(n, str):
+                names.append(n)
+        return names
+    # Single string
+    if isinstance(list_or_obj, str):
+        return [list_or_obj]
+    return []
+
+
+async def abs_list_library_items(
+    session: Session,
+    client_session: ClientSession,
+    limit: int = 12,
+) -> list[BookRequest]:
+    """
+    Fetch a page of items from the configured ABS library and map them to BookRequest-like objects
+    to render on the homepage. Items are not persisted; they are returned as transient objects.
+    """
+    base_url = abs_config.get_base_url(session)
+    lib_id = abs_config.get_library_id(session)
+    if not base_url or not lib_id:
+        return []
+
+    url = posixpath.join(base_url, f"api/libraries/{lib_id}/items")
+    params = {
+        "limit": str(limit),
+        "page": "0",
+        "minified": "1",
+        # Prefer recently added if supported; if not, ABS will default
+        "sort": "recentlyAdded",
+        "desc": "1",
+    }
+
+    async with client_session.get(url, headers=_headers(session), params=params) as resp:
+        if not resp.ok:
+            logger.debug("ABS: failed to list library items", status=resp.status, reason=resp.reason)
+            return []
+        payload = await resp.json()
+
+    results = payload.get("results") or payload.get("libraryItems") or []
+
+    books: list[BookRequest] = []
+    for item in results:
+        try:
+            # Try to find media + metadata fields regardless of shape
+            media = item.get("media") or item.get("book") or {}
+            metadata = media.get("metadata") or {}
+
+            title = metadata.get("title") or media.get("title") or item.get("title") or ""
+            subtitle = metadata.get("subtitle") or media.get("subtitle")
+            authors = _extract_names(metadata.get("authors") or media.get("authors"))
+            narrators = _extract_names(metadata.get("narrators") or media.get("narrators"))
+
+            # Cover: ABS exposes cover via /api/items/:id/cover
+            item_id = item.get("id") or item.get("libraryItemId") or media.get("id")
+            cover_image = None
+            if base_url and item_id:
+                cover_image = posixpath.join(base_url, f"api/items/{item_id}/cover")
+
+            # Duration in seconds -> minutes
+            duration_sec = (
+                media.get("duration")
+                or metadata.get("duration")
+                or item.get("duration")
+                or 0
+            )
+            try:
+                runtime_length_min = int(round((duration_sec or 0) / 60))
+            except Exception:
+                runtime_length_min = 0
+
+            # Release date: best-effort, default to now to satisfy model
+            from datetime import datetime
+
+            release_date_raw = (
+                metadata.get("publishedDate")
+                or metadata.get("releaseDate")
+                or media.get("publishedDate")
+                or media.get("releaseDate")
+            )
+            if isinstance(release_date_raw, str):
+                try:
+                    # Try ISO format
+                    release_date = datetime.fromisoformat(release_date_raw.replace("Z", "+00:00"))
+                except Exception:
+                    release_date = datetime.now()
+            else:
+                release_date = datetime.now()
+
+            # ASIN if present in media
+            asin = media.get("asin") or metadata.get("asin") or ""
+
+            book = BookRequest(
+                asin=asin or "",
+                title=title or "",
+                subtitle=subtitle,
+                authors=authors,
+                narrators=narrators,
+                cover_image=cover_image,
+                release_date=release_date,
+                runtime_length_min=runtime_length_min,
+                downloaded=True,
+            )
+            books.append(book)
+        except Exception as e:
+            logger.debug("ABS: failed to map library item", error=str(e))
+
+    return books
+
+
 async def abs_book_exists(
     session: Session, client_session: ClientSession, book: BookRequest
 ) -> bool:

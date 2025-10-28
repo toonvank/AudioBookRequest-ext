@@ -25,6 +25,8 @@ from app.util.db import get_session
 from app.util.log import logger
 from app.util.redirect import BaseUrlRedirectResponse
 from app.util.recommendations import get_homepage_recommendations, get_homepage_recommendations_async
+from app.internal.audiobookshelf.config import abs_config
+from app.internal.audiobookshelf.client import abs_list_library_items
 from app.util.templates import template_response, templates
 
 router = APIRouter()
@@ -151,12 +153,21 @@ async def read_root(
     }
     logger.debug("Homepage recommendations", **category_counts)
     
+    # If ABS is configured, fetch a slice of the user's ABS library to show on the homepage
+    abs_library: list[BookRequest] | None = None
+    try:
+        if abs_config.is_valid(session) and abs_config.get_library_id(session):
+            abs_library = await abs_list_library_items(session, client_session, limit=12)
+    except Exception as e:
+        logger.debug("ABS: fetching library for homepage failed", error=str(e))
+    
     return template_response(
         "root.html",
         request,
         user,
         {
             "recommendations": recommendations,
+            "abs_library": abs_library or [],
         },
     )
 
