@@ -1,0 +1,486 @@
+"""
+Recommendation engine utilities for generating book suggestions based on user activity and popularity.
+"""
+
+import asyncio
+import time
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
+from typing import Optional
+
+from aiohttp import ClientSession
+from sqlalchemy import func
+from sqlmodel import Session, col, desc, select
+
+from app.internal.models import BookRequest, BookSearchResult, User
+
+
+def get_popular_books(
+    session: Session, 
+    limit: int = 12, 
+    min_requests: int = 1,  # Lower default minimum
+    exclude_downloaded: bool = True
+) -> list[BookSearchResult]:
+    """
+    Get the most popular books based on how many users have requested them.
+    
+    Args:
+        session: Database session
+        limit: Maximum number of books to return
+        min_requests: Minimum number of requests a book needs to be considered popular
+        exclude_downloaded: Whether to exclude already downloaded books
+    
+    Returns:
+        List of popular books as BookSearchResult objects
+    """
+    from app.util.log import logger
+    
+    # First check if there are any book requests at all
+    total_requests = session.exec(
+        select(func.count()).select_from(BookRequest).where(
+            col(BookRequest.user_username).is_not(None)
+        )
+    ).one()
+    
+    logger.debug(f"Total book requests in database: {total_requests}")
+    
+    if total_requests == 0:
+        logger.debug("No user requests found, returning empty list")
+        return []
+    
+    query = (
+        select(
+            BookRequest,
+            func.count(BookRequest.user_username).label("request_count")
+        )
+        .where(
+            col(BookRequest.user_username).is_not(None),  # Only count actual user requests
+        )
+        .group_by(BookRequest.asin)
+        .having(func.count(BookRequest.user_username) >= min_requests)
+        .order_by(desc("request_count"), desc(BookRequest.updated_at))
+        .limit(limit)
+    )
+    
+    if exclude_downloaded:
+        query = query.where(~BookRequest.downloaded)
+    
+    results = session.exec(query).all()
+    
+    logger.debug(f"Popular books query returned {len(results)} results")
+    
+    popular_books = []
+    for book, request_count in results:
+        book_result = BookSearchResult.model_validate(book)
+        book_result.already_requested = True  # These are popular because they were requested
+        popular_books.append(book_result)
+        logger.debug(f"Popular book: {book.title} (requests: {request_count})")
+    
+    return popular_books
+
+
+def get_recently_requested_books(
+    session: Session, 
+    limit: int = 12, 
+    days_back: int = 30,
+    exclude_downloaded: bool = True
+) -> list[BookSearchResult]:
+    """
+    Get recently requested books within the specified time frame.
+    
+    Args:
+        session: Database session
+        limit: Maximum number of books to return
+        days_back: How many days back to look for recent requests
+        exclude_downloaded: Whether to exclude already downloaded books
+    
+    Returns:
+        List of recently requested books as BookSearchResult objects
+    """
+    cutoff_date = datetime.now() - timedelta(days=days_back)
+    
+    query = (
+        select(BookRequest)
+        .where(
+            col(BookRequest.user_username).is_not(None),
+            BookRequest.updated_at >= cutoff_date,
+        )
+        .order_by(desc(BookRequest.updated_at))
+        .limit(limit * 2)  # Get more to account for duplicates
+    )
+    
+    if exclude_downloaded:
+        query = query.where(~BookRequest.downloaded)
+    
+    results = session.exec(query).all()
+    
+    # Remove duplicates by ASIN while preserving order
+    seen_asins = set()
+    recent_books = []
+    
+    for book in results:
+        if book.asin not in seen_asins and len(recent_books) < limit:
+            seen_asins.add(book.asin)
+            book_result = BookSearchResult.model_validate(book)
+            book_result.already_requested = True
+            recent_books.append(book_result)
+    
+    return recent_books
+
+
+def get_books_by_popular_authors(
+    session: Session, 
+    limit: int = 12,
+    exclude_downloaded: bool = True
+) -> list[BookSearchResult]:
+    """
+    Get books by the most popular authors (authors with the most requested books).
+    
+    Args:
+        session: Database session
+        limit: Maximum number of books to return
+        exclude_downloaded: Whether to exclude already downloaded books
+    
+    Returns:
+        List of books by popular authors as BookSearchResult objects
+    """
+    # First, get the most popular authors
+    all_requests = session.exec(
+        select(BookRequest).where(
+            col(BookRequest.user_username).is_not(None),
+        )
+    ).all()
+    
+    # Count requests per author
+    author_request_counts = Counter()
+    for book in all_requests:
+        for author in book.authors:
+            author_request_counts[author] += 1
+    
+    # Get top authors
+    top_authors = [author for author, _ in author_request_counts.most_common(10)]
+    
+    if not top_authors:
+        return []
+    
+    # Get books by these popular authors that haven't been requested yet
+    query = (
+        select(BookRequest)
+        .where(
+            col(BookRequest.user_username).is_(None),  # Only cache entries, not user requests
+        )
+        .order_by(desc(BookRequest.updated_at))
+    )
+    
+    if exclude_downloaded:
+        query = query.where(~BookRequest.downloaded)
+    
+    cache_books = session.exec(query).all()
+    
+    # Filter books by popular authors
+    author_books = []
+    for book in cache_books:
+        if len(author_books) >= limit:
+            break
+        
+        # Check if any of the book's authors are in our popular authors list
+        if any(author in top_authors for author in book.authors):
+            book_result = BookSearchResult.model_validate(book)
+            book_result.already_requested = False
+            author_books.append(book_result)
+    
+    return author_books
+
+
+def get_user_recommendations(
+    session: Session, 
+    user: User, 
+    limit: int = 12
+) -> list[BookSearchResult]:
+    """
+    Get personalized recommendations for a specific user based on their request history.
+    
+    Args:
+        session: Database session
+        user: User to get recommendations for
+        limit: Maximum number of books to return
+    
+    Returns:
+        List of recommended books for the user
+    """
+    # Get user's requested books to analyze preferences
+    user_requests = session.exec(
+        select(BookRequest).where(
+            BookRequest.user_username == user.username
+        )
+    ).all()
+    
+    if not user_requests:
+        # If user has no history, return popular books
+        return get_popular_books(session, limit)
+    
+    # Extract user's favorite authors and narrators
+    user_authors = []
+    user_narrators = []
+    
+    for book in user_requests:
+        user_authors.extend(book.authors)
+        user_narrators.extend(book.narrators)
+    
+    # Count preferences
+    author_preferences = Counter(user_authors)
+    narrator_preferences = Counter(user_narrators)
+    
+    # Get books from cache that match user preferences
+    cache_books = session.exec(
+        select(BookRequest).where(
+            col(BookRequest.user_username).is_(None),  # Cache entries only
+            ~BookRequest.downloaded
+        )
+        .order_by(desc(BookRequest.updated_at))
+        .limit(limit * 5)  # Get more to filter from
+    ).all()
+    
+    # Score books based on user preferences
+    scored_books = []
+    user_requested_asins = {book.asin for book in user_requests}
+    
+    for book in cache_books:
+        if book.asin in user_requested_asins:
+            continue  # Skip books user already requested
+        
+        score = 0
+        
+        # Score based on favorite authors
+        for author in book.authors:
+            score += author_preferences.get(author, 0) * 3
+        
+        # Score based on favorite narrators
+        for narrator in book.narrators:
+            score += narrator_preferences.get(narrator, 0) * 2
+        
+        if score > 0:
+            book_result = BookSearchResult.model_validate(book)
+            book_result.already_requested = False
+            scored_books.append((book_result, score))
+    
+    # Sort by score and return top results
+    scored_books.sort(key=lambda x: x[1], reverse=True)
+    return [book for book, _ in scored_books[:limit]]
+
+
+async def get_popular_books_from_audible(
+    session: Session,
+    client_session: ClientSession,
+    limit: int = 12
+) -> list[BookSearchResult]:
+    """
+    Get popular books directly from Audible's API.
+    """
+    from app.internal.book_search import list_popular_audible_books
+    from app.util.log import logger
+    
+    try:
+        popular_books = await list_popular_audible_books(
+            session=session,
+            client_session=client_session, 
+            num_results=limit
+        )
+        
+        result_books = []
+        for book in popular_books:
+            book_result = BookSearchResult.model_validate(book)
+            book_result.already_requested = False
+            result_books.append(book_result)
+        
+        logger.debug(f"Retrieved {len(result_books)} popular books from Audible")
+        return result_books
+        
+    except Exception as e:
+        logger.error(f"Failed to get popular books from Audible: {e}")
+        return []
+
+
+async def get_category_books(
+    session: Session,
+    client_session: ClientSession,
+    search_terms: list[str],
+    limit: int = 12
+) -> list[BookSearchResult]:
+    """Get books for a specific category using search terms."""
+    from app.internal.book_search import list_audible_books
+    from app.util.log import logger
+    
+    all_books = []
+    books_per_term = max(1, limit // len(search_terms))
+    
+    for term in search_terms:
+        try:
+            term_books = await list_audible_books(
+                session=session,
+                client_session=client_session,
+                query=term,
+                num_results=books_per_term + 2,  # Get a few extra to account for duplicates
+                page=0
+            )
+            
+            # Add unique books only
+            for book in term_books:
+                book_result = BookSearchResult.model_validate(book)
+                book_result.already_requested = False
+                
+                # Check if already exists (by ASIN)
+                if not any(existing.asin == book_result.asin for existing in all_books):
+                    all_books.append(book_result)
+                
+                if len(all_books) >= limit:
+                    break
+                    
+        except Exception as e:
+            logger.warning(f"Failed to search for category term '{term}': {e}")
+            continue
+        
+        if len(all_books) >= limit:
+            break
+    
+    return all_books[:limit]
+
+
+async def get_homepage_recommendations_async(
+    session: Session, 
+    client_session: ClientSession,
+    user: Optional[User] = None
+) -> dict[str, list[BookSearchResult]]:
+    """
+    Get a comprehensive set of Netflix-style recommendations for the homepage.
+    
+    Args:
+        session: Database session
+        client_session: HTTP client session
+        user: Optional user for personalized recommendations
+    
+    Returns:
+        Dictionary with different recommendation categories
+    """
+    from app.util.log import logger
+    
+    recommendations = {}
+    
+    # 1. Popular books (mix of user requests and Audible popular)
+    user_popular = get_popular_books(session, limit=6)
+    audible_popular = await get_popular_books_from_audible(session, client_session, limit=12)
+    
+    # Combine and remove duplicates
+    popular_combined = list(user_popular)
+    for book in audible_popular:
+        if not any(existing.asin == book.asin for existing in popular_combined):
+            popular_combined.append(book)
+    recommendations["popular"] = popular_combined[:12]
+    
+    # 2. User personalized recommendations (if user exists)
+    if user:
+        recommendations["for_you"] = get_user_recommendations(session, user, limit=12)
+    
+    # 3. Recently requested by community
+    recommendations["recent"] = get_recently_requested_books(session, limit=12)
+    
+    # 4. Category-based recommendations (run in parallel for speed)
+    categories = {
+        "trending": ["trending", "viral", "popular now", "hot"],
+        "business": ["business", "entrepreneurship", "leadership", "productivity", "success"],
+        "fiction": ["fiction", "novel", "literature", "story", "fantasy", "mystery"],
+        "biography": ["biography", "memoir", "autobiography", "life story", "history"],
+        "science": ["science", "technology", "physics", "psychology", "innovation"],
+        "recent_releases": ["2024", "new release", "latest", "just released"]
+    }
+    
+    # Create tasks for parallel execution
+    category_tasks = []
+    for category_name, search_terms in categories.items():
+        task = get_category_books(session, client_session, search_terms, limit=12)
+        category_tasks.append((category_name, task))
+    
+    # Execute category searches in parallel
+    try:
+        for category_name, task in category_tasks:
+            try:
+                category_books = await task
+                recommendations[category_name] = category_books
+                logger.debug(f"Retrieved {len(category_books)} books for {category_name}")
+            except Exception as e:
+                logger.warning(f"Failed to get {category_name} books: {e}")
+                recommendations[category_name] = []
+    except Exception as e:
+        logger.error(f"Error in category recommendations: {e}")
+    
+    # Log summary
+    total_books = sum(len(books) for books in recommendations.values())
+    logger.info(f"Generated {len(recommendations)} categories with {total_books} total books")
+    
+    return recommendations
+
+
+def get_homepage_recommendations(
+    session: Session, 
+    user: Optional[User] = None
+) -> dict[str, list[BookSearchResult]]:
+    """
+    Get a comprehensive set of recommendations for the homepage (sync version - fallback).
+    
+    Args:
+        session: Database session
+        user: Optional user for personalized recommendations
+    
+    Returns:
+        Dictionary with different recommendation categories
+    """
+    from app.util.log import logger
+    
+    recommendations = {}
+    
+    # Always include popular books
+    recommendations["popular"] = get_popular_books(session, limit=8)
+    
+    # Include recently requested books
+    recommendations["recent"] = get_recently_requested_books(session, limit=8)
+    
+    # If user is provided, add personalized recommendations
+    if user:
+        recommendations["for_you"] = get_user_recommendations(session, user, limit=8)
+    else:
+        # If no user, show books by popular authors instead
+        recommendations["by_popular_authors"] = get_books_by_popular_authors(session, limit=8)
+    
+    # If we have no recommendations at all, fall back to showing any cached books
+    total_recs = sum(len(books) for books in recommendations.values())
+    logger.debug(f"Total recommendations: {total_recs}")
+    
+    if total_recs == 0:
+        logger.debug("No user-based recommendations found, checking for cached books")
+        
+        # Get any cached books from search results
+        cached_books = session.exec(
+            select(BookRequest)
+            .where(col(BookRequest.user_username).is_(None))  # These are cache entries
+            .order_by(desc(BookRequest.updated_at))
+            .limit(16)
+        ).all()
+        
+        logger.debug(f"Found {len(cached_books)} cached books")
+        
+        if cached_books:
+            fallback_books = []
+            for book in cached_books[:8]:
+                book_result = BookSearchResult.model_validate(book)
+                book_result.already_requested = False
+                fallback_books.append(book_result)
+            recommendations["popular"] = fallback_books
+            logger.debug(f"Using {len(fallback_books)} cached books as popular recommendations")
+        else:
+            logger.debug("No cached books found either - database appears empty")
+            
+            # Check total book entries in database
+            total_books = session.exec(select(func.count()).select_from(BookRequest)).one()
+            logger.debug(f"Total BookRequest entries in database: {total_books}")
+    
+    return recommendations

@@ -6,7 +6,8 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, Security
 from fastapi.responses import FileResponse
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlmodel import Session, col, select
 
 from app.internal.auth.authentication import (
     ABRAuth,
@@ -17,11 +18,14 @@ from app.internal.auth.authentication import (
 from app.internal.auth.config import auth_config
 from app.internal.auth.login_types import LoginTypeEnum
 from app.internal.env_settings import Settings
-from app.internal.models import GroupEnum
+from app.internal.models import BookRequest, GroupEnum
+from aiohttp import ClientSession
+from app.util.connection import get_connection
 from app.util.db import get_session
 from app.util.log import logger
 from app.util.redirect import BaseUrlRedirectResponse
-from app.util.templates import templates
+from app.util.recommendations import get_homepage_recommendations, get_homepage_recommendations_async
+from app.util.templates import template_response, templates
 
 router = APIRouter()
 
@@ -128,16 +132,33 @@ def read_favicon_svg():
 
 
 @router.get("/")
-def read_root(
+async def read_root(
     request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
     user: DetailedUser = Security(ABRAuth()),
 ):
-    return BaseUrlRedirectResponse("/search")
-    # TODO: create a root page
-    # return templates.TemplateResponse(
-    #     "root.html",
-    #     {"request": request, "user": user},
-    # )
+    # Get recommendations for the homepage
+    try:
+        recommendations = await get_homepage_recommendations_async(session, client_session, user)
+    except Exception as e:
+        logger.warning(f"Failed to get async recommendations, falling back to sync: {e}")
+        recommendations = get_homepage_recommendations(session, user)
+    
+    # Debug: Log what recommendations we got
+    category_counts = {
+        category: len(books) for category, books in recommendations.items()
+    }
+    logger.debug("Homepage recommendations", **category_counts)
+    
+    return template_response(
+        "root.html",
+        request,
+        user,
+        {
+            "recommendations": recommendations,
+        },
+    )
 
 
 @router.get("/init")
@@ -228,3 +249,159 @@ def create_init(
 @router.get("/login")
 def redirect_login(request: Request):
     return BaseUrlRedirectResponse("/auth/login?" + urlencode(request.query_params))
+
+
+@router.post("/debug/populate-sample-data")
+def populate_sample_data(
+    session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
+):
+    """Debug endpoint to populate sample data for testing recommendations"""
+    from datetime import datetime, timedelta
+    import uuid
+    from app.internal.models import BookRequest
+    
+    # Sample book data (these would normally come from Audible API)
+    sample_books = [
+        {
+            "asin": "B07B444HVH", 
+            "title": "Atomic Habits",
+            "subtitle": "An Easy & Proven Way to Build Good Habits & Break Bad Ones",
+            "authors": ["James Clear"],
+            "narrators": ["James Clear"],
+            "cover_image": "https://m.media-amazon.com/images/I/513Y5o-DYtL.jpg",
+            "runtime_length_min": 317,
+        },
+        {
+            "asin": "B0031RS2FU",
+            "title": "The 7 Habits of Highly Effective People", 
+            "subtitle": "Powerful Lessons in Personal Change",
+            "authors": ["Stephen R. Covey"],
+            "narrators": ["Stephen R. Covey"],
+            "cover_image": "https://m.media-amazon.com/images/I/51Myx7Ka9wL.jpg",
+            "runtime_length_min": 463,
+        },
+        {
+            "asin": "B008BUHZPQ",
+            "title": "Thinking, Fast and Slow",
+            "subtitle": None,
+            "authors": ["Daniel Kahneman"],
+            "narrators": ["Patrick Egan"],
+            "cover_image": "https://m.media-amazon.com/images/I/41shZGS-G%2BL.jpg",
+            "runtime_length_min": 1260,
+        },
+        {
+            "asin": "B01LTHUMB6",
+            "title": "Sapiens",
+            "subtitle": "A Brief History of Humankind",
+            "authors": ["Yuval Noah Harari"],
+            "narrators": ["Derek Perkins"],
+            "cover_image": "https://m.media-amazon.com/images/I/41V%2BihjoxUL.jpg",
+            "runtime_length_min": 901,
+        }
+    ]
+    
+    created_count = 0
+    
+    # Add cache entries (books available for discovery)
+    for book_data in sample_books:
+        existing = session.exec(
+            select(BookRequest).where(BookRequest.asin == book_data["asin"])
+        ).first()
+        
+        if not existing:
+            book = BookRequest(
+                asin=book_data["asin"],
+                title=book_data["title"],
+                subtitle=book_data["subtitle"],
+                authors=book_data["authors"],
+                narrators=book_data["narrators"],
+                cover_image=book_data["cover_image"],
+                release_date=datetime.now() - timedelta(days=100),
+                runtime_length_min=book_data["runtime_length_min"],
+                user_username=None,  # This makes it a cache entry
+            )
+            session.add(book)
+            created_count += 1
+    
+    # Add some user requests to make recommendations work
+    user_requests = [
+        ("B07B444HVH", "testuser1"),  # Atomic Habits requested by testuser1
+        ("B07B444HVH", "testuser2"),  # Atomic Habits requested by testuser2 (popular!)
+        ("B0031RS2FU", "testuser1"),  # 7 Habits requested by testuser1
+        ("B008BUHZPQ", "testuser2"),  # Thinking Fast and Slow requested by testuser2
+    ]
+    
+    for asin, username in user_requests:
+        # Find the cache entry
+        cache_book = session.exec(
+            select(BookRequest).where(
+                BookRequest.asin == asin,
+                col(BookRequest.user_username).is_(None)
+            )
+        ).first()
+        
+        if cache_book:
+            # Create user request
+            existing_request = session.exec(
+                select(BookRequest).where(
+                    BookRequest.asin == asin,
+                    BookRequest.user_username == username
+                )
+            ).first()
+            
+            if not existing_request:
+                user_request = BookRequest(
+                    asin=cache_book.asin,
+                    title=cache_book.title,
+                    subtitle=cache_book.subtitle,
+                    authors=cache_book.authors,
+                    narrators=cache_book.narrators,
+                    cover_image=cache_book.cover_image,
+                    release_date=cache_book.release_date,
+                    runtime_length_min=cache_book.runtime_length_min,
+                    user_username=username,
+                    updated_at=datetime.now() - timedelta(days=5),
+                )
+                session.add(user_request)
+                created_count += 1
+    
+    session.commit()
+    
+    logger.info(f"Created {created_count} sample book entries for testing")
+    
+    return {"message": f"Populated {created_count} sample entries", "status": "success"}
+
+
+@router.post("/debug/fetch-popular-books")
+async def fetch_popular_books_debug(
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: DetailedUser = Security(ABRAuth(GroupEnum.admin)),
+):
+    """Debug endpoint to fetch popular books from Audible"""
+    from app.util.recommendations import get_popular_books_from_audible
+    
+    try:
+        logger.info("Starting to fetch popular books from Audible...")
+        popular_books = await get_popular_books_from_audible(session, client_session, limit=12)
+        logger.info(f"Successfully fetched {len(popular_books)} popular books from Audible")
+        
+        book_titles = [book.title for book in popular_books[:5]]  # First 5 titles for logging
+        
+        # Also check what's in the database now
+        total_cached = session.exec(
+            select(func.count()).select_from(BookRequest).where(
+                col(BookRequest.user_username).is_(None)
+            )
+        ).one()
+        
+        return {
+            "message": f"Successfully fetched {len(popular_books)} popular books. Database now has {total_cached} cached books total.", 
+            "status": "success",
+            "sample_titles": book_titles,
+            "total_cached_books": total_cached
+        }
+    except Exception as e:
+        logger.error(f"Failed to fetch popular books: {e}")
+        return {"message": f"Failed to fetch popular books: {str(e)}", "status": "error"}

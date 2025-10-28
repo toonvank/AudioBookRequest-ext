@@ -1,7 +1,241 @@
 {% extends "base.html" %}
 {% block head %}
-    <title>Root</title>
+    <title>AudioBook Request</title>
 {% endblock head %}
 {% block body %}
-    <h1>Hi {{ username }}</h1>
+    <div class="w-screen flex flex-col items-center justify-center p-6 sm:p-8 overflow-x-hidden gap-6">
+        <!-- Welcome Header -->
+        <div class="w-full max-w-7xl">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h1 class="text-4xl font-bold text-left">Welcome, {{ user.username }}!</h1>
+                    <p class="text-lg opacity-70 mt-1">Discover your next great audiobook</p>
+                </div>
+                <a href="{{ base_url }}/search" 
+                   class="btn btn-primary flex items-center gap-2"
+                   title="Search for books">
+                    <span>Search Books</span>
+                    {% include "icons/search.html" %}
+                </a>
+            </div>
+        </div>
+
+        <!-- Quick Action Bar -->
+        <div class="w-full max-w-7xl">
+            <div class="flex flex-wrap gap-3 mb-8">
+                <div class="badge badge-primary badge-lg">{{ (recommendations.popular or [])|length }} Popular Books</div>
+                <div class="badge badge-secondary badge-lg">{{ (recommendations.trending or [])|length }} Trending</div>
+                <div class="badge badge-accent badge-lg">{{ (recommendations.for_you or [])|length }} For You</div>
+                <div class="badge badge-neutral badge-lg">{{ (recommendations.recent_releases or [])|length }} New Releases</div>
+            </div>
+        </div>
+
+        <!-- Netflix-Style Recommendation Categories -->
+        
+        <!-- For You Section (Personalized) -->
+        {% if recommendations.for_you %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">✨ For You</h2>
+                <a href="{{ base_url }}/search" class="link link-primary">Discover more →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.for_you[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Popular Books Section -->
+        {% if recommendations.popular %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">🔥 Popular Right Now</h2>
+                <a href="{{ base_url }}/search?q=bestseller" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.popular[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Trending Section -->
+        {% if recommendations.trending %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">📈 Trending This Week</h2>
+                <a href="{{ base_url }}/search?q=trending" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.trending[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Business & Self-Help -->
+        {% if recommendations.business %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">💼 Business & Self-Help</h2>
+                <a href="{{ base_url }}/search?q=business" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.business[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Fiction & Literature -->
+        {% if recommendations.fiction %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">📖 Fiction & Literature</h2>
+                <a href="{{ base_url }}/search?q=fiction" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.fiction[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Biography & History -->
+        {% if recommendations.biography %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">👤 Biography & History</h2>
+                <a href="{{ base_url }}/search?q=biography" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.biography[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Science & Technology -->
+        {% if recommendations.science %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">🔬 Science & Technology</h2>
+                <a href="{{ base_url }}/search?q=science" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.science[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Recently Requested (Community Activity) -->
+        {% if recommendations.recent %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">� Recently Requested by Community</h2>
+                <a href="{{ base_url }}/wishlist" class="link link-primary">View wishlist →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.recent[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- New Releases -->
+        {% if recommendations.recent_releases %}
+        <div class="w-full max-w-7xl mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">🆕 New Releases</h2>
+                <a href="{{ base_url }}/search?q=new+release" class="link link-primary">View all →</a>
+            </div>
+            <div class="overflow-x-auto">
+                <div class="flex gap-4 pb-4" style="width: max-content;">
+                    {% for book in recommendations.recent_releases[:12] %}
+                        <div class="flex-none w-[8rem] sm:w-[10rem]">
+                            {% include "components/book_card.html" %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- No Recommendations Fallback -->
+        {% if not recommendations.popular and not recommendations.recent and not recommendations.for_you and not recommendations.by_popular_authors %}
+        <div class="w-full max-w-7xl text-center py-16">
+            <div class="flex flex-col items-center gap-4">
+                <div class="text-6xl opacity-20">📚</div>
+                <h3 class="text-2xl font-semibold">No recommendations yet</h3>
+                <p class="text-lg opacity-70 max-w-md">
+                    Start by requesting some audiobooks to get personalized recommendations and see what's popular!
+                </p>
+                <div class="flex gap-4 mt-4">
+                    <a href="{{ base_url }}/search" 
+                       class="btn btn-primary btn-lg">
+                        Search for Books
+                    </a>
+                    {% if user.is_admin() %}
+                    <div class="flex flex-col gap-2">
+                        <button class="btn btn-secondary"
+                                hx-post="{{ base_url }}/debug/populate-sample-data"
+                                hx-target="body"
+                                hx-swap="outerHTML">
+                            Add Sample Data
+                        </button>
+                        <button class="btn btn-accent"
+                                hx-post="{{ base_url }}/debug/fetch-popular-books"
+                                hx-target="body" 
+                                hx-swap="outerHTML">
+                            Fetch Popular from Audible
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
 {% endblock body %}

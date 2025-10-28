@@ -217,6 +217,82 @@ async def get_search_suggestions(
     return titles
 
 
+async def list_popular_audible_books(
+    session: Session,
+    client_session: ClientSession,
+    num_results: int = 20,
+    audible_region: audible_region_type = get_region_from_settings(),
+) -> list[BookRequest]:
+    """
+    Get popular/trending books by searching for popular terms.
+    Uses the existing search functionality with popular keywords.
+    """
+    from pydantic import BaseModel
+    
+    # Create a proper cache key object
+    class PopularBooksCache(BaseModel, frozen=True):
+        type: str = "popular"
+        region: str
+        num_results: int
+    
+    cache_key = PopularBooksCache(region=audible_region, num_results=num_results)
+    cache_result = search_cache.get(cache_key)
+
+    if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
+        for book in cache_result.value:
+            session.add(book)
+        logger.debug("Using cached popular books", region=audible_region)
+        return cache_result.value
+
+    # Use popular search terms to find trending books
+    popular_search_terms = [
+        "bestseller",
+        "james clear", 
+        "atomic habits",
+        "stephen king",
+        "psychology", 
+        "biography",
+        "business",
+        "self help"
+    ]
+    
+    all_books = []
+    books_per_term = max(1, num_results // len(popular_search_terms))
+    
+    for term in popular_search_terms:
+        try:
+            # Use the existing search function
+            term_books = await list_audible_books(
+                session=session,
+                client_session=client_session,
+                query=term,
+                num_results=books_per_term,
+                page=0,
+                audible_region=audible_region
+            )
+            
+            # Add unique books only
+            for book in term_books:
+                if book not in all_books and len(all_books) < num_results:
+                    all_books.append(book)
+                    
+            if len(all_books) >= num_results:
+                break
+                
+        except Exception as e:
+            logger.warning(f"Failed to search for popular term '{term}': {e}")
+            continue
+    
+    # Cache the results
+    search_cache[cache_key] = CacheResult(
+        value=all_books,
+        timestamp=time.time(),
+    )
+    
+    logger.info(f"Fetched {len(all_books)} popular books using search terms")
+    return all_books
+
+
 async def list_audible_books(
     session: Session,
     client_session: ClientSession,
