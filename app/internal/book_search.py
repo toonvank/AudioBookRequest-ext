@@ -360,6 +360,16 @@ async def list_audible_books(
         if book:
             ordered.append(book)
 
+    # Attempt to mark items as downloaded if they exist in Audiobookshelf
+    try:
+        from app.internal.audiobookshelf.config import abs_config
+        from app.internal.audiobookshelf.client import abs_mark_downloaded_flags
+
+        if abs_config.is_valid(session) and abs_config.get_check_downloaded(session):
+            await abs_mark_downloaded_flags(session, client_session, ordered)
+    except Exception as e:
+        logger.debug("ABS integration check failed", error=str(e))
+
     search_cache[cache_key] = CacheResult(
         value=ordered,
         timestamp=time.time(),
