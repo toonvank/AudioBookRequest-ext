@@ -28,6 +28,7 @@ from app.util.recommendations import get_homepage_recommendations, get_homepage_
 from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.client import abs_list_library_items
 from app.util.templates import template_response, templates
+from app.internal.book_search import list_audible_books, get_region_from_settings
 
 router = APIRouter()
 
@@ -140,9 +141,43 @@ async def read_root(
     client_session: Annotated[ClientSession, Depends(get_connection)],
     user: DetailedUser = Security(ABRAuth()),
 ):
-    # Get recommendations for the homepage
+    # If ABS is configured, fetch a slice of the user's ABS library to show and seed personalized recs
+    abs_library: list[BookRequest] | None = None
     try:
-        recommendations = await get_homepage_recommendations_async(session, client_session, user)
+        if abs_config.is_valid(session) and abs_config.get_library_id(session):
+            abs_library = await abs_list_library_items(session, client_session, limit=12)
+    except Exception as e:
+        logger.debug("ABS: fetching library for homepage failed", error=str(e))
+
+    # Get recommendations for the homepage (pass ABS ASINs as seeds for personalization)
+    try:
+        abs_seeds = [b.asin for b in (abs_library or []) if b.asin]
+        # Enrich missing ASINs from ABS by searching Audible by title + first author
+        missing_seed_candidates = [b for b in (abs_library or []) if not b.asin]
+        if missing_seed_candidates:
+            region = get_region_from_settings()
+            for b in missing_seed_candidates[:8]:  # cap lookups
+                try:
+                    q = f"{b.title} {b.authors[0] if b.authors else ''}".strip()
+                    if not q:
+                        continue
+                    results = await list_audible_books(
+                        session=session,
+                        client_session=client_session,
+                        query=q,
+                        num_results=1,
+                        page=0,
+                        audible_region=region,
+                    )
+                    if results:
+                        seed_asin = results[0].asin
+                        if seed_asin and seed_asin not in abs_seeds:
+                            abs_seeds.append(seed_asin)
+                except Exception as ie:
+                    logger.debug("ABS seed ASIN lookup failed", title=b.title, error=str(ie))
+        recommendations = await get_homepage_recommendations_async(
+            session, client_session, user, abs_seed_asins=abs_seeds
+        )
     except Exception as e:
         logger.warning(f"Failed to get async recommendations, falling back to sync: {e}")
         recommendations = get_homepage_recommendations(session, user)
@@ -152,14 +187,6 @@ async def read_root(
         category: len(books) for category, books in recommendations.items()
     }
     logger.debug("Homepage recommendations", **category_counts)
-    
-    # If ABS is configured, fetch a slice of the user's ABS library to show on the homepage
-    abs_library: list[BookRequest] | None = None
-    try:
-        if abs_config.is_valid(session) and abs_config.get_library_id(session):
-            abs_library = await abs_list_library_items(session, client_session, limit=12)
-    except Exception as e:
-        logger.debug("ABS: fetching library for homepage failed", error=str(e))
     
     return template_response(
         "root.html",

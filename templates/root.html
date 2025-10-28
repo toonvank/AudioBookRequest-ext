@@ -19,18 +19,6 @@
                 </a>
             </div>
         </div>
-
-        <!-- Quick Action Bar -->
-        <div class="w-full max-w-7xl">
-            <div class="flex flex-wrap gap-3 mb-8">
-                <div class="badge badge-primary badge-lg">{{ (recommendations.popular or [])|length }} Popular Books</div>
-                <div class="badge badge-secondary badge-lg">{{ (recommendations.trending or [])|length }} Trending</div>
-                <div class="badge badge-accent badge-lg">{{ (recommendations.for_you or [])|length }} For You</div>
-                <div class="badge badge-neutral badge-lg">{{ (recommendations.recent_releases or [])|length }} New Releases</div>
-            </div>
-        </div>
-
-        <!-- Netflix-Style Recommendation Categories -->
         
         <!-- For You Section (Personalized) -->
         {% if recommendations.for_you %}
@@ -42,25 +30,6 @@
             <div class="overflow-x-auto">
                 <div class="flex gap-4 pb-4" style="width: max-content;">
                     {% for book in recommendations.for_you[:12] %}
-                        <div class="flex-none w-[8rem] sm:w-[10rem]">
-                            {% include "components/book_card.html" %}
-                        </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Popular Books Section -->
-        {% if recommendations.popular %}
-        <div class="w-full max-w-7xl mb-8">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">🔥 Popular Right Now</h2>
-                <a href="{{ base_url }}/search?q=bestseller" class="link link-primary">View all →</a>
-            </div>
-            <div class="overflow-x-auto">
-                <div class="flex gap-4 pb-4" style="width: max-content;">
-                    {% for book in recommendations.popular[:12] %}
                         <div class="flex-none w-[8rem] sm:w-[10rem]">
                             {% include "components/book_card.html" %}
                         </div>
@@ -156,25 +125,6 @@
             <div class="overflow-x-auto">
                 <div class="flex gap-4 pb-4" style="width: max-content;">
                     {% for book in recommendations.science[:12] %}
-                        <div class="flex-none w-[8rem] sm:w-[10rem]">
-                            {% include "components/book_card.html" %}
-                        </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Recently Requested (Community Activity) -->
-        {% if recommendations.recent %}
-        <div class="w-full max-w-7xl mb-8">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">� Recently Requested by Community</h2>
-                <a href="{{ base_url }}/wishlist" class="link link-primary">View wishlist →</a>
-            </div>
-            <div class="overflow-x-auto">
-                <div class="flex gap-4 pb-4" style="width: max-content;">
-                    {% for book in recommendations.recent[:12] %}
                         <div class="flex-none w-[8rem] sm:w-[10rem]">
                             {% include "components/book_card.html" %}
                         </div>

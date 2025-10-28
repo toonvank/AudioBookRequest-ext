@@ -6,13 +6,137 @@ import asyncio
 import time
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Iterable
 
 from aiohttp import ClientSession
 from sqlalchemy import func
 from sqlmodel import Session, col, desc, select
 
 from app.internal.models import BookRequest, BookSearchResult, User
+
+
+async def get_user_sims_recommendations(
+    session: Session,
+    client_session: ClientSession,
+    user: User,
+    seed_asins: Optional[Iterable[str]] = None,
+    limit: int = 12,
+) -> list[BookSearchResult]:
+    """
+    Build personalized recommendations by aggregating Audible "similar" results
+    for books the user has requested and optionally additional seed ASINs.
+
+    Ranking:
+    - Primary: frequency across all seed sims lists (higher is better)
+    - Secondary: average position in sims lists (lower is better)
+
+    Filters:
+    - Exclude already requested by the user
+    - Exclude already downloaded/owned (if detectable)
+    - Exclude duplicates
+    """
+    from app.internal.book_search import list_similar_audible_books
+    from app.util.log import logger
+
+    # Collect user's requested books as default seeds
+    user_requests: list[BookRequest] = session.exec(
+        select(BookRequest).where(BookRequest.user_username == user.username)
+    ).all()
+    user_seed_asins = [b.asin for b in user_requests if b.asin]
+
+    seeds: list[str] = []
+    if seed_asins:
+        seeds.extend([s for s in seed_asins if s])
+    seeds.extend(user_seed_asins)
+    # Deduplicate while preserving order
+    seen = set()
+    seed_list: list[str] = []
+    for a in seeds:
+        if a not in seen:
+            seen.add(a)
+            seed_list.append(a)
+
+    # If no seeds, fall back to simple personalized heuristic
+    if not seed_list:
+        return get_user_recommendations(session, user, limit)
+
+    # Fetch sims for each seed concurrently (up to a reasonable cap)
+    seed_list = seed_list[:20]  # cap to avoid excessive requests
+
+    async def _fetch(asin: str):
+        try:
+            return await list_similar_audible_books(session, client_session, asin, num_results=50)
+        except Exception:
+            return []
+
+    tasks = [
+        _fetch(asin)
+        for asin in seed_list
+    ]
+
+    all_sims_lists: list[list[BookRequest]] = []
+    try:
+        all_sims_lists = await asyncio.gather(*tasks)
+    except Exception as e:
+        logger.debug("Gather sims failed", error=str(e))
+
+    # Aggregate by ASIN: count frequency and positions
+    freq: Counter[str] = Counter()
+    positions: defaultdict[str, list[int]] = defaultdict(list)
+    book_map: dict[str, BookRequest] = {}
+
+    for sims in all_sims_lists:
+        for idx, b in enumerate(sims):
+            if not b.asin:
+                continue
+            freq[b.asin] += 1
+            positions[b.asin].append(idx)
+            # Keep the first seen instance for map
+            if b.asin not in book_map:
+                book_map[b.asin] = b
+
+    if not freq:
+        # Fallback
+        return get_user_recommendations(session, user, limit)
+
+    # Build set of exclusions: already requested by user and downloaded
+    user_requested_asins = {b.asin for b in user_requests}
+
+    # Attempt to mark downloaded via ABS if configured (best-effort)
+    try:
+        from app.internal.audiobookshelf.config import abs_config
+        from app.internal.audiobookshelf.client import abs_mark_downloaded_flags
+        if abs_config.is_valid(session) and abs_config.get_check_downloaded(session):
+            # Mark on a subset of candidates to avoid heavy calls
+            subset = list(book_map.values())[:30]
+            await abs_mark_downloaded_flags(session, client_session, subset)
+    except Exception as e:
+        logger.debug("ABS exist check skipped", error=str(e))
+
+    candidates: list[tuple[BookRequest, int, float]] = []
+    for asin, count in freq.items():
+        b = book_map.get(asin)
+        if not b:
+            continue
+        if asin in user_requested_asins:
+            continue
+        if getattr(b, "downloaded", False):
+            continue
+        avg_pos = sum(positions[asin]) / max(1, len(positions[asin]))
+        candidates.append((b, count, avg_pos))
+
+    # Sort: frequency desc, avg_pos asc, updated_at desc as tiebreaker
+    candidates.sort(key=lambda x: (-x[1], x[2], getattr(x[0], "updated_at", datetime.now())),)
+
+    results: list[BookSearchResult] = []
+    for b, _count, _avg in candidates:
+        r = BookSearchResult.model_validate(b)
+        r.already_requested = False
+        results.append(r)
+        if len(results) >= limit:
+            break
+
+    return results
 
 
 def get_popular_books(
@@ -349,7 +473,8 @@ async def get_category_books(
 async def get_homepage_recommendations_async(
     session: Session, 
     client_session: ClientSession,
-    user: Optional[User] = None
+    user: Optional[User] = None,
+    abs_seed_asins: Optional[Iterable[str]] = None,
 ) -> dict[str, list[BookSearchResult]]:
     """
     Get a comprehensive set of Netflix-style recommendations for the homepage.
@@ -379,7 +504,17 @@ async def get_homepage_recommendations_async(
     
     # 2. User personalized recommendations (if user exists)
     if user:
-        recommendations["for_you"] = get_user_recommendations(session, user, limit=12)
+        # Build seed list from optional ABS items
+        seed_asins: list[str] = []
+        if abs_seed_asins:
+            seed_asins = [a for a in abs_seed_asins if a]
+        try:
+            recommendations["for_you"] = await get_user_sims_recommendations(
+                session, client_session, user, seed_asins, limit=12
+            )
+        except Exception as e:
+            logger.warning(f"Sims-based recommendations failed, falling back: {e}")
+            recommendations["for_you"] = get_user_recommendations(session, user, limit=12)
     
     # 3. Recently requested by community
     recommendations["recent"] = get_recently_requested_books(session, limit=12)
