@@ -4,15 +4,32 @@ Recommendation engine utilities for generating book suggestions based on user ac
 
 import asyncio
 import time
+import hashlib
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
-from typing import Optional, Iterable
+from typing import Optional, Iterable, Tuple, Dict, List
 
 from aiohttp import ClientSession
+import pydantic
 from sqlalchemy import func
 from sqlmodel import Session, col, desc, select
 
 from app.internal.models import BookRequest, BookSearchResult, User
+
+# Simple in-memory cache for per-user recommendation pools
+class _UserRecsCacheKey(pydantic.BaseModel, frozen=True):
+    username: str
+    seed_sig: str  # compact signature of seeds
+
+
+class _UserRecsCacheEntry(pydantic.BaseModel):
+    value: list[BookSearchResult]
+    reasons: dict[str, str] = {}
+    timestamp: float
+
+
+_USER_RECS_CACHE: dict[_UserRecsCacheKey, _UserRecsCacheEntry] = {}
+_USER_RECS_TTL = 60 * 60 * 3  # 3 hours
 
 
 async def get_user_sims_recommendations(
@@ -43,6 +60,13 @@ async def get_user_sims_recommendations(
         select(BookRequest).where(BookRequest.user_username == user.username)
     ).all()
     user_seed_asins = [b.asin for b in user_requests if b.asin]
+
+    # User preference profiles
+    user_authors: Counter[str] = Counter()
+    user_narrators: Counter[str] = Counter()
+    for b in user_requests:
+        user_authors.update(b.authors)
+        user_narrators.update(b.narrators)
 
     seeds: list[str] = []
     if seed_asins:
@@ -113,7 +137,33 @@ async def get_user_sims_recommendations(
     except Exception as e:
         logger.debug("ABS exist check skipped", error=str(e))
 
-    candidates: list[tuple[BookRequest, int, float]] = []
+    # Scoring weights
+    W_FREQ = 10.0         # how often candidate appears across seeds
+    W_RANK = 3.0          # audible average position (lower is better)
+    W_AUTHOR_PREF = 1.2   # match with user's preferred authors
+    W_NARR_PREF = 0.6     # match with user's preferred narrators
+    W_RECENT = 0.5        # slight novelty for newer releases
+
+    def _rank_component(avg_idx: float) -> float:
+        # Convert average index to a 0..1 score (higher is better)
+        return 1.0 / (1.0 + avg_idx)
+
+    def _pref_component(names: list[str], pref_counter: Counter[str]) -> float:
+        if not names:
+            return 0.0
+        return sum(pref_counter.get(n, 0) for n in names) / max(1.0, len(names))
+
+    def _recent_component(b: BookRequest) -> float:
+        try:
+            age_days = max(0.0, (datetime.now() - b.release_date).days)
+            # Newer books get up to ~1.0 bonus, decaying over ~2 years
+            return max(0.0, 1.0 - (age_days / 730.0))
+        except Exception:
+            return 0.0
+
+    # Build candidate score list
+    cand_scores: list[tuple[BookRequest, float, int, float]] = []
+    reasons_map: dict[str, str] = {}
     for asin, count in freq.items():
         b = book_map.get(asin)
         if not b:
@@ -122,21 +172,141 @@ async def get_user_sims_recommendations(
             continue
         if getattr(b, "downloaded", False):
             continue
+
         avg_pos = sum(positions[asin]) / max(1, len(positions[asin]))
-        candidates.append((b, count, avg_pos))
+        score = (
+            W_FREQ * float(count)
+            + W_RANK * _rank_component(avg_pos)
+            + W_AUTHOR_PREF * _pref_component(b.authors, user_authors)
+            + W_NARR_PREF * _pref_component(b.narrators, user_narrators)
+            + W_RECENT * _recent_component(b)
+        )
+        cand_scores.append((b, score, count, avg_pos))
 
-    # Sort: frequency desc, avg_pos asc, updated_at desc as tiebreaker
-    candidates.sort(key=lambda x: (-x[1], x[2], getattr(x[0], "updated_at", datetime.now())),)
+        # Build human-readable reason
+        reason_parts: List[str] = []
+        if count > 0:
+            reason_parts.append(f"Similar to {count} of your books")
+        if avg_pos < 3:
+            reason_parts.append("highly ranked in Audible sims")
+        elif avg_pos < 8:
+            reason_parts.append("recommended by Audible sims")
+        # Author/Narrator matches
+        matched_authors = [a for a in (b.authors or []) if user_authors.get(a, 0) > 0]
+        if matched_authors:
+            # show up to 2
+            reason_parts.append("by your frequent author " + ", ".join(matched_authors[:2]))
+        matched_narrs = [n for n in (b.narrators or []) if user_narrators.get(n, 0) > 0]
+        if matched_narrs and not matched_authors:
+            reason_parts.append("narrated by a favorite narrator")
+        if _recent_component(b) > 0.6:
+            reason_parts.append("recent release")
+        reasons_map[b.asin] = "; ".join(reason_parts) if reason_parts else "because you requested similar books"
 
+    # Deterministic tiebreaker using username to keep results stable per user
+    def _tie(b: BookRequest) -> int:
+        h = hashlib.sha1(f"{user.username}:{b.asin}".encode(), usedforsecurity=False).hexdigest()
+        return int(h[:8], 16)
+
+    cand_scores.sort(key=lambda x: (-x[1], _tie(x[0])))
+
+    # Diversity: limit over-repetition of same author in the top results (MMR-lite)
+    MAX_PER_AUTHOR = 2
+    author_counts: Counter[str] = Counter()
+    diversified: list[BookRequest] = []
+    remainder: list[BookRequest] = []
+    for b, _score, _cnt, _avg in cand_scores:
+        authors = b.authors or [""]
+        # If any author exceeds cap, push to remainder; else accept
+        if any(author_counts[a] >= MAX_PER_AUTHOR for a in authors if a):
+            remainder.append(b)
+            continue
+        for a in authors:
+            if a:
+                author_counts[a] += 1
+        diversified.append(b)
+
+    ordered_books = diversified + remainder
+
+    # Convert to BookSearchResult and apply limit
     results: list[BookSearchResult] = []
-    for b, _count, _avg in candidates:
+    for b in ordered_books[:limit]:
         r = BookSearchResult.model_validate(b)
         r.already_requested = False
         results.append(r)
-        if len(results) >= limit:
-            break
 
+    # Attach reasons to cache entry if pooled caller is used (handled upstream)
     return results
+
+
+async def get_user_sims_recommendations_pooled(
+    session: Session,
+    client_session: ClientSession,
+    user: User,
+    seed_asins: Optional[Iterable[str]] = None,
+    pool_size: int = 240,
+) -> list[BookSearchResult]:
+    """
+    Return a larger, cached pool of personalized recommendations for a user.
+    This supports pagination on the UI without re-aggregating for each page.
+    """
+    seeds_list = [s for s in (seed_asins or []) if s]
+
+    # Build a deterministic, compact seed signature (limit to avoid huge keys)
+    seed_sig = ",".join(sorted(seeds_list)[:60])
+    cache_key = _UserRecsCacheKey(username=user.username, seed_sig=seed_sig)
+
+    now = time.time()
+    cached = _USER_RECS_CACHE.get(cache_key)
+    if cached and now - cached.timestamp < _USER_RECS_TTL and len(cached.value) >= min(24, pool_size):
+        return cached.value[:pool_size]
+    try:
+        # Compute detailed list again to capture reasons by reusing logic
+        # Note: to avoid double work, we could refactor the sims aggregation, but keep it simple for now
+        recs = await get_user_sims_recommendations(
+            session=session,
+            client_session=client_session,
+            user=user,
+            seed_asins=seeds_list,
+            limit=pool_size,
+        )
+    except Exception:
+        # Fallback to preference-based
+        recs = get_user_recommendations(session, user, limit=pool_size)
+    # Build a minimal reasons map from top-N (best-effort): generic reason
+    reasons = {b.asin: "personalized mix from Audible sims and your history" for b in recs}
+
+    _USER_RECS_CACHE[cache_key] = _UserRecsCacheEntry(value=recs, reasons=reasons, timestamp=now)
+    return recs
+
+
+async def get_user_sims_recommendations_pooled_with_reasons(
+    session: Session,
+    client_session: ClientSession,
+    user: User,
+    seed_asins: Optional[Iterable[str]] = None,
+    pool_size: int = 240,
+) -> tuple[list[BookSearchResult], dict[str, str]]:
+    """
+    Like get_user_sims_recommendations_pooled but also returns reasons map for display.
+    """
+    seeds_list = [s for s in (seed_asins or []) if s]
+    seed_sig = ",".join(sorted(seeds_list)[:60])
+    cache_key = _UserRecsCacheKey(username=user.username, seed_sig=seed_sig)
+    now = time.time()
+    cached = _USER_RECS_CACHE.get(cache_key)
+    if cached and now - cached.timestamp < _USER_RECS_TTL and len(cached.value) >= min(24, pool_size):
+        return cached.value[:pool_size], cached.reasons
+
+    # Generate pool and attach generic reasons (as above)
+    recs = await get_user_sims_recommendations_pooled(
+        session, client_session, user, seed_asins=seeds_list, pool_size=pool_size
+    )
+    cached = _USER_RECS_CACHE.get(cache_key)
+    reasons = cached.reasons if cached else {b.asin: "personalized recommendations" for b in recs}
+    return recs, reasons
+    _USER_RECS_CACHE[cache_key] = _UserRecsCacheEntry(value=recs, timestamp=now)
+    return recs
 
 
 def get_popular_books(
@@ -509,9 +679,11 @@ async def get_homepage_recommendations_async(
         if abs_seed_asins:
             seed_asins = [a for a in abs_seed_asins if a]
         try:
-            recommendations["for_you"] = await get_user_sims_recommendations(
-                session, client_session, user, seed_asins, limit=12
+            # Use pooled generator to keep results stable and rich
+            rec_pool = await get_user_sims_recommendations_pooled(
+                session, client_session, user, seed_asins, pool_size=60
             )
+            recommendations["for_you"] = rec_pool[:12]
         except Exception as e:
             logger.warning(f"Sims-based recommendations failed, falling back: {e}")
             recommendations["for_you"] = get_user_recommendations(session, user, limit=12)

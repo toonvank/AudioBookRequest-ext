@@ -24,7 +24,13 @@ from app.util.connection import get_connection
 from app.util.db import get_session
 from app.util.log import logger
 from app.util.redirect import BaseUrlRedirectResponse
-from app.util.recommendations import get_homepage_recommendations, get_homepage_recommendations_async
+from app.util.recommendations import (
+    get_homepage_recommendations,
+    get_homepage_recommendations_async,
+    get_user_sims_recommendations,
+    get_user_sims_recommendations_pooled,
+    get_user_sims_recommendations_pooled_with_reasons,
+)
 from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.client import abs_list_library_items
 from app.util.templates import template_response, templates
@@ -195,6 +201,87 @@ async def read_root(
         {
             "recommendations": recommendations,
             "abs_library": abs_library or [],
+        },
+    )
+
+
+@router.get("/recommendations/for-you")
+async def read_for_you(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    page: int = 1,
+    per_page: int = 24,
+    user: DetailedUser = Security(ABRAuth()),
+):
+    """Full page of personalized recommendations with simple pagination."""
+    # Clamp pagination values
+    page = max(1, page)
+    per_page = max(6, min(60, per_page))
+
+    # Seed from ABS like on homepage (including resolving missing ASINs)
+    abs_seeds: list[str] = []
+    try:
+        abs_library: list[BookRequest] | None = None
+        if abs_config.is_valid(session) and abs_config.get_library_id(session):
+            abs_library = await abs_list_library_items(session, client_session, limit=24)
+            abs_seeds.extend([b.asin for b in (abs_library or []) if b.asin])
+
+            # Resolve some missing ASINs
+            missing = [b for b in (abs_library or []) if not b.asin][:10]
+            if missing:
+                region = get_region_from_settings()
+                for b in missing:
+                    q = f"{b.title} {b.authors[0] if b.authors else ''}".strip()
+                    if not q:
+                        continue
+                    try:
+                        res = await list_audible_books(
+                            session=session,
+                            client_session=client_session,
+                            query=q,
+                            num_results=1,
+                            page=0,
+                            audible_region=region,
+                        )
+                        if res and res[0].asin and res[0].asin not in abs_seeds:
+                            abs_seeds.append(res[0].asin)
+                    except Exception as ie:
+                        logger.debug("ABS seed resolve failed", title=b.title, error=str(ie))
+    except Exception as e:
+        logger.debug("ABS seeding skipped", error=str(e))
+
+    # Fetch a larger pool to support pagination
+    # Fetch a larger pooled list once and slice
+    try:
+        full_list, reasons = await get_user_sims_recommendations_pooled_with_reasons(
+            session, client_session, user, seed_asins=abs_seeds, pool_size=240
+        )
+    except Exception as e:
+        logger.warning("For You full-page recs failed, falling back", error=str(e))
+        # Fall back to preference-based recs
+        from app.util.recommendations import get_user_recommendations
+        full_list = get_user_recommendations(session, user, limit=240)
+        reasons = {b.asin: "personalized recommendations" for b in full_list}
+
+    # Paginate
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_items = full_list[start:end]
+    total_items = len(full_list)
+    has_next = end < total_items
+
+    return template_response(
+        "recommendations/for_you.html",
+        request,
+        user,
+        {
+            "books": page_items,
+            "page": page,
+            "per_page": per_page,
+            "has_next": has_next,
+            "total_items": total_items,
+            "reasons": reasons,
         },
     )
 
