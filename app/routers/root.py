@@ -5,7 +5,7 @@ from typing import Annotated, Callable
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, Security
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func
 from sqlmodel import Session, col, select
 
@@ -131,9 +131,39 @@ def read_favicon_16():
 @router.get("/static/site.webmanifest")
 @add_cache_headers
 def read_site_webmanifest():
-    return FileResponse(
-        root / "site.webmanifest", media_type="application/manifest+json"
-    )
+    """Serve a manifest with correct base paths and names for PWA installability."""
+    base = Settings().app.base_url.rstrip("/") or ""
+    version = Settings().app.version
+    manifest = {
+        "name": "AudioBookRequest",
+        "short_name": "ABR",
+        # start_url should include base to work behind subpaths
+        "start_url": f"{base}/",  # resolved by the browser to absolute path
+        "scope": f"{base}/",
+        "display": "standalone",
+        "background_color": "#ffffff",
+        "theme_color": "#ffffff",
+        "icons": [
+            {
+                "src": f"{base}/static/android-chrome-192x192.png?v={version}",
+                "sizes": "192x192",
+                "type": "image/png",
+            },
+            {
+                "src": f"{base}/static/android-chrome-512x512.png?v={version}",
+                "sizes": "512x512",
+                "type": "image/png",
+            },
+        ],
+    }
+    return JSONResponse(manifest, media_type="application/manifest+json")
+
+
+@router.get("/service-worker.js")
+@add_cache_headers
+def read_service_worker():
+    """Service worker served from app root for proper scope control."""
+    return FileResponse(root / "service-worker.js", media_type="application/javascript")
 
 
 @router.get("/static/htmx.js")
