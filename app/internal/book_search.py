@@ -239,10 +239,10 @@ async def list_popular_audible_books(
     cache_result = search_cache.get(cache_key)
 
     if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
-        for book in cache_result.value:
-            session.add(book)
+        # Merge cached ORM instances into the current session to avoid cross-session attachment errors
+        merged = [session.merge(book) for book in cache_result.value]
         logger.debug("Using cached popular books", region=audible_region)
-        return cache_result.value
+        return merged
 
     # Use popular search terms to find trending books
     popular_search_terms = [
@@ -315,10 +315,9 @@ async def list_similar_audible_books(
     cache_key = SimilarBooksCache(asin=asin, num_results=num_results, audible_region=audible_region)
     cache_result = search_cache.get(cache_key)
     if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
-        for book in cache_result.value:
-            session.add(book)
+        merged = [session.merge(book) for book in cache_result.value]
         logger.debug("Using cached sims result", asin=asin, region=audible_region)
-        return cache_result.value
+        return merged
 
     base_url = f"https://api.audible{audible_regions[audible_region]}/1.0/catalog/products/{asin}/sims"
     params = {
@@ -409,11 +408,10 @@ async def list_audible_books(
     cache_result = search_cache.get(cache_key)
 
     if cache_result and time.time() - cache_result.timestamp < REFETCH_TTL:
-        for book in cache_result.value:
-            # add back books to the session so we can access their attributes
-            session.add(book)
+        # Merge cached objects into this session and return the merged list
+        merged = [session.merge(book) for book in cache_result.value]
         logger.debug("Using cached search result", query=query, region=audible_region)
-        return cache_result.value
+        return merged
 
     params = {
         "num_results": num_results,

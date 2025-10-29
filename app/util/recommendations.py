@@ -687,6 +687,83 @@ async def get_homepage_recommendations_async(
         except Exception as e:
             logger.warning(f"Sims-based recommendations failed, falling back: {e}")
             recommendations["for_you"] = get_user_recommendations(session, user, limit=12)
+
+        # 2b. Because you've read sections (seeded by user's recent requests)
+        try:
+            sections: list[dict] = []
+            # Fetch recent requested books by user to use as seeds
+            recent_reqs: list[BookRequest] = session.exec(
+                select(BookRequest)
+                .where(BookRequest.user_username == user.username)
+                .order_by(desc(BookRequest.updated_at))
+                .limit(12)
+            ).all()
+            # Deduplicate by ASIN and keep those with ASINs
+            seen_asins: set[str] = set()
+            seeds: list[BookRequest] = []
+            for b in recent_reqs:
+                if b.asin and b.asin not in seen_asins:
+                    seen_asins.add(b.asin)
+                    seeds.append(b)
+                if len(seeds) >= 3:
+                    break
+            # For each seed, fetch similar books
+            from app.internal.book_search import list_similar_audible_books
+            for seed in seeds:
+                try:
+                    sims = await list_similar_audible_books(session, client_session, seed.asin, num_results=24)
+                except Exception:
+                    sims = []
+                books: list[BookSearchResult] = []
+                for sb in sims:
+                    try:
+                        r = BookSearchResult.model_validate(sb)
+                        r.already_requested = False
+                        # Avoid including the seed itself if it appears
+                        if r.asin and r.asin != seed.asin and not any(x.asin == r.asin for x in books):
+                            books.append(r)
+                    except Exception:
+                        continue
+                if books:
+                    sections.append({
+                        "title": f"Because you read {seed.title}",
+                        "description": None,
+                        "books": books[:12],
+                    })
+            if sections:
+                # Expose as structured sections for homepage rendering
+                recommendations["because_you_read_sections"] = sections  # type: ignore
+        except Exception as e:
+            logger.debug("Because-you-read sections failed", error=str(e))
+
+        # 2c. Authors you like (top authors from history)
+        try:
+            # Count authors from user's requests
+            user_requests: list[BookRequest] = session.exec(
+                select(BookRequest).where(BookRequest.user_username == user.username)
+            ).all()
+            author_counts: Counter[str] = Counter()
+            for b in user_requests:
+                for a in b.authors or []:
+                    author_counts[a] += 1
+            top_authors = [a for a, _ in author_counts.most_common(5) if a]
+            author_sections: list[dict] = []
+            for a in top_authors[:2]:
+                try:
+                    # Use author name as search term; fetch a compact list
+                    books = await get_category_books(session, client_session, [a], limit=12)
+                except Exception:
+                    books = []
+                if books:
+                    author_sections.append({
+                        "title": f"More by {a}",
+                        "description": None,
+                        "books": books,
+                    })
+            if author_sections:
+                recommendations["authors_you_like_sections"] = author_sections  # type: ignore
+        except Exception as e:
+            logger.debug("Authors-you-like sections failed", error=str(e))
     
     # 3. Recently requested by community
     recommendations["recent"] = get_recently_requested_books(session, limit=12)
@@ -720,8 +797,84 @@ async def get_homepage_recommendations_async(
     except Exception as e:
         logger.error(f"Error in category recommendations: {e}")
     
+    # 5. AI-powered category (best-effort)
+    try:
+        from app.internal.ai.config import ai_config
+        from app.internal.ai.client import fetch_ai_categories, fetch_ai_book_recommendations
+        if ai_config.is_configured(session):
+            ai_categories = await fetch_ai_categories(session, client_session, user, desired_count=3)
+            ai_sections: list[dict] = []
+            if ai_categories:
+                for cat in ai_categories:
+                    title = cat.get("title") or "AI Picks"
+                    desc = cat.get("description") or ""
+                    terms = cat.get("search_terms") or []
+                    try:
+                        books = await get_category_books(session, client_session, terms, limit=12)
+                    except Exception:
+                        books = []
+                    ai_sections.append({"title": title, "description": desc, "books": books})
+                if ai_sections:
+                    # Backward-compatible top section
+                    recommendations["ai_picks"] = ai_sections[0]["books"]
+                    recommendations["ai_picks_title"] = ai_sections[0]["title"]  # type: ignore
+                    # Full structured sections
+                    recommendations["ai_sections"] = ai_sections  # type: ignore
+
+            # AI title-level recs: "Because you liked" with reasons
+            ai_title_recs = await fetch_ai_book_recommendations(session, client_session, user, desired_count=12)
+            if ai_title_recs:
+                # Resolve to actual BookSearchResults via searches
+                resolved: list[dict] = []
+                seen_asins: set[str] = set()
+                user_asins: set[str] = set()
+                if user:
+                    user_asins = {b.asin for b in session.exec(select(BookRequest).where(BookRequest.user_username == user.username)).all() if b.asin}
+                for rec in ai_title_recs:
+                    # Build search candidates: explicit terms or title+author
+                    terms = rec.get("search_terms") or []
+                    if not terms:
+                        t = rec.get("title") or ""
+                        a = rec.get("author") or ""
+                        if t:
+                            q = f"{t} {a}".strip()
+                            terms = [q]
+                    books: list[BookSearchResult] = []
+                    if terms:
+                        try:
+                            books = await get_category_books(session, client_session, terms, limit=3)
+                        except Exception:
+                            books = []
+                    # Pick best candidate by title/author match
+                    picked: Optional[BookSearchResult] = None
+                    if books:
+                        target_title = (rec.get("title") or "").lower().strip()
+                        target_author = (rec.get("author") or "").lower().strip()
+                        for b in books:
+                            bt = (b.title or "").lower().strip()
+                            auths = ",".join(a.lower() for a in (b.authors or []))
+                            if target_title and target_title in bt and (not target_author or target_author in auths):
+                                picked = b
+                                break
+                        if not picked:
+                            picked = books[0]
+                    if picked and picked.asin and picked.asin not in seen_asins and picked.asin not in user_asins:
+                        seen_asins.add(picked.asin)
+                        reason_seed = rec.get("seed_title") or "something you liked"
+                        reason_txt = rec.get("reasoning") or "similar to your taste"
+                        resolved.append({
+                            "book": picked,
+                            "reason": f"Because you liked {reason_seed}: {reason_txt}",
+                        })
+                if resolved:
+                    recommendations["ai_because_you_like"] = resolved  # type: ignore
+    except Exception as e:
+        # Swallow errors; AI is optional but surface at info level
+        from app.util.log import logger
+        logger.info("AI category generation failed", error=str(e))
+
     # Log summary
-    total_books = sum(len(books) for books in recommendations.values())
+    total_books = sum(len(books) for books in recommendations.values() if isinstance(books, list))
     logger.info(f"Generated {len(recommendations)} categories with {total_books} total books")
     
     return recommendations

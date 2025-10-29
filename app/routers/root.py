@@ -35,6 +35,7 @@ from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.client import abs_list_library_items
 from app.util.templates import template_response, templates
 from app.internal.book_search import list_audible_books, get_region_from_settings
+from app.internal.ai.client import clear_ai_cache_for_user, fetch_ai_categories
 
 router = APIRouter()
 
@@ -284,6 +285,69 @@ async def read_for_you(
             "reasons": reasons,
         },
     )
+
+
+@router.get("/recommendations/ai")
+async def read_ai_page(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    refresh: bool = False,
+    user: DetailedUser = Security(ABRAuth()),
+):
+    # Optionally bypass cache when refresh=true
+    if refresh:
+        clear_ai_cache_for_user(user)
+        logger.info("AI page refresh requested; cache cleared", username=user.username)
+    # Fetch multiple AI sections
+    from app.internal.ai.config import ai_config
+    sections: list[dict] = []
+    title: str = "AI Picks"
+    description: str | None = None
+    if ai_config.is_configured(session):
+        logger.info("Fetching AI categories for page", username=user.username)
+        cats = await fetch_ai_categories(session, client_session, user, desired_count=3, use_cache=not refresh)
+        if cats:
+            for cat in cats:
+                t = cat.get("title") or "AI Picks"
+                d = cat.get("description") or ""
+                terms = cat.get("search_terms") or []
+                try:
+                    from app.util.recommendations import get_category_books
+                    books = await get_category_books(session, client_session, terms, limit=24)
+                except Exception:
+                    books = []
+                sections.append({"title": t, "description": d, "books": books})
+            # Use first as page title
+            if sections:
+                title = sections[0]["title"]
+                description = sections[0]["description"]
+        logger.info("AI page categories resolved", count=len(cats or []))
+    else:
+        logger.info("AI not configured; AI page will be empty", username=user.username)
+
+    return template_response(
+        "recommendations/ai.html",
+        request,
+        user,
+        {
+            "sections": sections,
+            "title": title,
+            "description": description,
+        },
+    )
+
+
+@router.post("/recommendations/ai/refresh")
+def refresh_ai_recommendations(
+    session: Annotated[Session, Depends(get_session)],
+    user: DetailedUser = Security(ABRAuth()),
+):
+    clear_ai_cache_for_user(user)
+    return Response(status_code=204, headers={"HX-Refresh": "true"})
+
+
+ 
 
 
 @router.get("/init")
