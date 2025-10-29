@@ -645,6 +645,7 @@ async def get_homepage_recommendations_async(
     client_session: ClientSession,
     user: Optional[User] = None,
     abs_seed_asins: Optional[Iterable[str]] = None,
+    include_ai: bool = True,
 ) -> dict[str, list[BookSearchResult]]:
     """
     Get a comprehensive set of Netflix-style recommendations for the homepage.
@@ -797,81 +798,82 @@ async def get_homepage_recommendations_async(
     except Exception as e:
         logger.error(f"Error in category recommendations: {e}")
     
-    # 5. AI-powered category (best-effort)
-    try:
-        from app.internal.ai.config import ai_config
-        from app.internal.ai.client import fetch_ai_categories, fetch_ai_book_recommendations
-        if ai_config.is_configured(session):
-            ai_categories = await fetch_ai_categories(session, client_session, user, desired_count=3)
-            ai_sections: list[dict] = []
-            if ai_categories:
-                for cat in ai_categories:
-                    title = cat.get("title") or "AI Picks"
-                    desc = cat.get("description") or ""
-                    terms = cat.get("search_terms") or []
-                    try:
-                        books = await get_category_books(session, client_session, terms, limit=12)
-                    except Exception:
-                        books = []
-                    ai_sections.append({"title": title, "description": desc, "books": books})
-                if ai_sections:
-                    # Backward-compatible top section
-                    recommendations["ai_picks"] = ai_sections[0]["books"]
-                    recommendations["ai_picks_title"] = ai_sections[0]["title"]  # type: ignore
-                    # Full structured sections
-                    recommendations["ai_sections"] = ai_sections  # type: ignore
-
-            # AI title-level recs: "Because you liked" with reasons
-            ai_title_recs = await fetch_ai_book_recommendations(session, client_session, user, desired_count=12)
-            if ai_title_recs:
-                # Resolve to actual BookSearchResults via searches
-                resolved: list[dict] = []
-                seen_asins: set[str] = set()
-                user_asins: set[str] = set()
-                if user:
-                    user_asins = {b.asin for b in session.exec(select(BookRequest).where(BookRequest.user_username == user.username)).all() if b.asin}
-                for rec in ai_title_recs:
-                    # Build search candidates: explicit terms or title+author
-                    terms = rec.get("search_terms") or []
-                    if not terms:
-                        t = rec.get("title") or ""
-                        a = rec.get("author") or ""
-                        if t:
-                            q = f"{t} {a}".strip()
-                            terms = [q]
-                    books: list[BookSearchResult] = []
-                    if terms:
+    # 5. AI-powered category (best-effort) — optionally included to avoid blocking initial page render
+    if include_ai:
+        try:
+            from app.internal.ai.config import ai_config
+            from app.internal.ai.client import fetch_ai_categories, fetch_ai_book_recommendations
+            if ai_config.is_configured(session):
+                ai_categories = await fetch_ai_categories(session, client_session, user, desired_count=3)
+                ai_sections: list[dict] = []
+                if ai_categories:
+                    for cat in ai_categories:
+                        title = cat.get("title") or "AI Picks"
+                        desc = cat.get("description") or ""
+                        terms = cat.get("search_terms") or []
                         try:
-                            books = await get_category_books(session, client_session, terms, limit=3)
+                            books = await get_category_books(session, client_session, terms, limit=12)
                         except Exception:
                             books = []
-                    # Pick best candidate by title/author match
-                    picked: Optional[BookSearchResult] = None
-                    if books:
-                        target_title = (rec.get("title") or "").lower().strip()
-                        target_author = (rec.get("author") or "").lower().strip()
-                        for b in books:
-                            bt = (b.title or "").lower().strip()
-                            auths = ",".join(a.lower() for a in (b.authors or []))
-                            if target_title and target_title in bt and (not target_author or target_author in auths):
-                                picked = b
-                                break
-                        if not picked:
-                            picked = books[0]
-                    if picked and picked.asin and picked.asin not in seen_asins and picked.asin not in user_asins:
-                        seen_asins.add(picked.asin)
-                        reason_seed = rec.get("seed_title") or "something you liked"
-                        reason_txt = rec.get("reasoning") or "similar to your taste"
-                        resolved.append({
-                            "book": picked,
-                            "reason": f"Because you liked {reason_seed}: {reason_txt}",
-                        })
-                if resolved:
-                    recommendations["ai_because_you_like"] = resolved  # type: ignore
-    except Exception as e:
-        # Swallow errors; AI is optional but surface at info level
-        from app.util.log import logger
-        logger.info("AI category generation failed", error=str(e))
+                        ai_sections.append({"title": title, "description": desc, "books": books})
+                    if ai_sections:
+                        # Backward-compatible top section
+                        recommendations["ai_picks"] = ai_sections[0]["books"]
+                        recommendations["ai_picks_title"] = ai_sections[0]["title"]  # type: ignore
+                        # Full structured sections
+                        recommendations["ai_sections"] = ai_sections  # type: ignore
+
+                # AI title-level recs: "Because you liked" with reasons
+                ai_title_recs = await fetch_ai_book_recommendations(session, client_session, user, desired_count=12)
+                if ai_title_recs:
+                    # Resolve to actual BookSearchResults via searches
+                    resolved: list[dict] = []
+                    seen_asins: set[str] = set()
+                    user_asins: set[str] = set()
+                    if user:
+                        user_asins = {b.asin for b in session.exec(select(BookRequest).where(BookRequest.user_username == user.username)).all() if b.asin}
+                    for rec in ai_title_recs:
+                        # Build search candidates: explicit terms or title+author
+                        terms = rec.get("search_terms") or []
+                        if not terms:
+                            t = rec.get("title") or ""
+                            a = rec.get("author") or ""
+                            if t:
+                                q = f"{t} {a}".strip()
+                                terms = [q]
+                        books: list[BookSearchResult] = []
+                        if terms:
+                            try:
+                                books = await get_category_books(session, client_session, terms, limit=3)
+                            except Exception:
+                                books = []
+                        # Pick best candidate by title/author match
+                        picked: Optional[BookSearchResult] = None
+                        if books:
+                            target_title = (rec.get("title") or "").lower().strip()
+                            target_author = (rec.get("author") or "").lower().strip()
+                            for b in books:
+                                bt = (b.title or "").lower().strip()
+                                auths = ",".join(a.lower() for a in (b.authors or []))
+                                if target_title and target_title in bt and (not target_author or target_author in auths):
+                                    picked = b
+                                    break
+                            if not picked:
+                                picked = books[0]
+                        if picked and picked.asin and picked.asin not in seen_asins and picked.asin not in user_asins:
+                            seen_asins.add(picked.asin)
+                            reason_seed = rec.get("seed_title") or "something you liked"
+                            reason_txt = rec.get("reasoning") or "similar to your taste"
+                            resolved.append({
+                                "book": picked,
+                                "reason": f"Because you liked {reason_seed}: {reason_txt}",
+                            })
+                    if resolved:
+                        recommendations["ai_because_you_like"] = resolved  # type: ignore
+        except Exception as e:
+            # Swallow errors; AI is optional but surface at info level
+            from app.util.log import logger
+            logger.info("AI category generation failed", error=str(e))
 
     # Log summary
     total_books = sum(len(books) for books in recommendations.values() if isinstance(books, list))

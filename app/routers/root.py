@@ -18,7 +18,7 @@ from app.internal.auth.authentication import (
 from app.internal.auth.config import auth_config
 from app.internal.auth.login_types import LoginTypeEnum
 from app.internal.env_settings import Settings
-from app.internal.models import BookRequest, GroupEnum
+from app.internal.models import BookRequest, GroupEnum, BookSearchResult
 from aiohttp import ClientSession
 from app.util.connection import get_connection
 from app.util.db import get_session
@@ -35,7 +35,7 @@ from app.internal.audiobookshelf.config import abs_config
 from app.internal.audiobookshelf.client import abs_list_library_items
 from app.util.templates import template_response, templates
 from app.internal.book_search import list_audible_books, get_region_from_settings
-from app.internal.ai.client import clear_ai_cache_for_user, fetch_ai_categories
+from app.internal.ai.client import clear_ai_cache_for_user
 
 router = APIRouter()
 
@@ -182,8 +182,9 @@ async def read_root(
                             abs_seeds.append(seed_asin)
                 except Exception as ie:
                     logger.debug("ABS seed ASIN lookup failed", title=b.title, error=str(ie))
+        # Important: do not include AI in initial render to avoid blocking page load
         recommendations = await get_homepage_recommendations_async(
-            session, client_session, user, abs_seed_asins=abs_seeds
+            session, client_session, user, abs_seed_asins=abs_seeds, include_ai=False
         )
     except Exception as e:
         logger.warning(f"Failed to get async recommendations, falling back to sync: {e}")
@@ -299,41 +300,16 @@ async def read_ai_page(
     if refresh:
         clear_ai_cache_for_user(user)
         logger.info("AI page refresh requested; cache cleared", username=user.username)
-    # Fetch multiple AI sections
-    from app.internal.ai.config import ai_config
-    sections: list[dict] = []
-    title: str = "AI Picks"
-    description: str | None = None
-    if ai_config.is_configured(session):
-        logger.info("Fetching AI categories for page", username=user.username)
-        cats = await fetch_ai_categories(session, client_session, user, desired_count=3, use_cache=not refresh)
-        if cats:
-            for cat in cats:
-                t = cat.get("title") or "AI Picks"
-                d = cat.get("description") or ""
-                terms = cat.get("search_terms") or []
-                try:
-                    from app.util.recommendations import get_category_books
-                    books = await get_category_books(session, client_session, terms, limit=24)
-                except Exception:
-                    books = []
-                sections.append({"title": t, "description": d, "books": books})
-            # Use first as page title
-            if sections:
-                title = sections[0]["title"]
-                description = sections[0]["description"]
-        logger.info("AI page categories resolved", count=len(cats or []))
-    else:
-        logger.info("AI not configured; AI page will be empty", username=user.username)
 
+    # Render lightweight shell; sections will be loaded asynchronously via HTMX
     return template_response(
         "recommendations/ai.html",
         request,
         user,
         {
-            "sections": sections,
-            "title": title,
-            "description": description,
+            "sections": [],
+            "title": "AI Picks",
+            "description": None,
         },
     )
 
@@ -345,6 +321,131 @@ def refresh_ai_recommendations(
 ):
     clear_ai_cache_for_user(user)
     return Response(status_code=204, headers={"HX-Refresh": "true"})
+
+
+# Lightweight fragment endpoints to fetch AI-powered sections without blocking initial page
+@router.get("/recommendations/ai/home-fragment")
+async def ai_home_fragment(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: DetailedUser = Security(ABRAuth()),
+):
+    from app.internal.ai.config import ai_config
+    from app.internal.ai.client import fetch_ai_categories, fetch_ai_book_recommendations
+    from app.util.recommendations import get_category_books
+
+    context: dict = {}
+    if ai_config.is_configured(session):
+        # AI discovery sections
+        ai_sections: list[dict] = []
+        try:
+            cats = await fetch_ai_categories(session, client_session, user, desired_count=3)
+        except Exception:
+            cats = None
+        if cats:
+            for cat in cats:
+                title = cat.get("title") or "AI Picks"
+                desc = cat.get("description") or ""
+                terms = cat.get("search_terms") or []
+                try:
+                    books = await get_category_books(session, client_session, terms, limit=12)
+                except Exception:
+                    books = []
+                ai_sections.append({"title": title, "description": desc, "books": books})
+        if ai_sections:
+            context["ai_sections"] = ai_sections
+            context["ai_picks_title"] = ai_sections[0]["title"]
+            context["ai_picks"] = ai_sections[0]["books"]
+
+        # Because you liked — title-level AI recs
+        try:
+            title_recs = await fetch_ai_book_recommendations(session, client_session, user, desired_count=12)
+        except Exception:
+            title_recs = None
+        if title_recs:
+            # Resolve to concrete books similarly to util
+            resolved: list[dict] = []
+            seen_asins: set[str] = set()
+            user_asins: set[str] = set()
+            if user:
+                user_asins = {b.asin for b in session.exec(select(BookRequest).where(BookRequest.user_username == user.username)).all() if b.asin}
+            for rec in title_recs:
+                terms = rec.get("search_terms") or []
+                if not terms:
+                    t = rec.get("title") or ""
+                    a = rec.get("author") or ""
+                    if t:
+                        terms = [f"{t} {a}".strip()]
+                books: list[BookSearchResult] = []
+                if terms:
+                    try:
+                        books = await get_category_books(session, client_session, terms, limit=3)
+                    except Exception:
+                        books = []
+                picked: BookSearchResult | None = None
+                if books:
+                    target_title = (rec.get("title") or "").lower().strip()
+                    target_author = (rec.get("author") or "").lower().strip()
+                    for b in books:
+                        bt = (b.title or "").lower().strip()
+                        auths = ",".join(a.lower() for a in (b.authors or []))
+                        if target_title and target_title in bt and (not target_author or target_author in auths):
+                            picked = b
+                            break
+                    if not picked:
+                        picked = books[0]
+                if picked and picked.asin and picked.asin not in seen_asins and picked.asin not in user_asins:
+                    seen_asins.add(picked.asin)
+                    reason_seed = rec.get("seed_title") or "something you liked"
+                    reason_txt = rec.get("reasoning") or "similar to your taste"
+                    resolved.append({"book": picked, "reason": f"Because you liked {reason_seed}: {reason_txt}"})
+            if resolved:
+                context["ai_because_you_like"] = resolved
+
+    # Render the fragment (will be swapped into the homepage)
+    return templates.TemplateResponse(
+        "components/ai_home_sections.html",
+        {"request": request, **context},
+    )
+
+
+@router.get("/recommendations/ai/page-fragment")
+async def ai_page_fragment(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)],
+    client_session: Annotated[ClientSession, Depends(get_connection)],
+    user: DetailedUser = Security(ABRAuth()),
+):
+    from app.internal.ai.config import ai_config
+    from app.internal.ai.client import fetch_ai_categories
+    from app.util.recommendations import get_category_books
+
+    title: str = "AI Picks"
+    description: str | None = None
+    sections: list[dict] = []
+    if ai_config.is_configured(session):
+        try:
+            cats = await fetch_ai_categories(session, client_session, user, desired_count=3)
+        except Exception:
+            cats = None
+        if cats:
+            for cat in cats:
+                t = cat.get("title") or "AI Picks"
+                d = cat.get("description") or ""
+                terms = cat.get("search_terms") or []
+                try:
+                    books = await get_category_books(session, client_session, terms, limit=24)
+                except Exception:
+                    books = []
+                sections.append({"title": t, "description": d, "books": books})
+            if sections:
+                title = sections[0]["title"]
+                description = sections[0]["description"]
+    return templates.TemplateResponse(
+        "components/ai_page_sections.html",
+        {"request": request, "sections": sections, "title": title, "description": description},
+    )
 
 
  
