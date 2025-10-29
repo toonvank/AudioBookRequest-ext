@@ -45,6 +45,37 @@ root = Path("static")
 etag_cache: dict[PathLike[str] | str, str] = {}
 
 
+# Pick a fun, consistent emoji based on an AI category title
+def pick_category_emoji(title: str) -> str:
+    t = (title or "").lower()
+    # Order matters: first match wins
+    mapping: list[tuple[list[str], str]] = [
+        (["productivity", "habit", "focus", "self-improve", "motivation"], "🌱"),
+        (["business", "startup", "entrepreneur", "management", "leadership"], "💼"),
+        (["finance", "invest", "money", "wealth", "economics"], "💰"),
+        (["science", "physics", "chemistry", "biology", "space", "neuroscience"], "🔬"),
+        (["psychology", "mind", "behavior", "cognitive"], "🧠"),
+        (["technology", "programming", "software", "ai", "machine learning"], "🖥️"),
+        (["history", "histor", "ancient", "civilization"], "🏺"),
+        (["biography", "memoir", "autobiography"], "👤"),
+        (["fiction", "novel", "literature"], "📖"),
+        (["fantasy", "dragon", "magic"], "🧙"),
+        (["mystery", "detective", "crime", "thriller"], "🕵️"),
+        (["horror", "ghost", "haunted"], "👻"),
+        (["romance", "love", "relationship"], "💞"),
+        (["education", "learn", "course", "study"], "🎓"),
+        (["kids", "children", "ya", "young adult"], "🎈"),
+        (["new", "recent", "release", "latest"], "🆕"),
+        (["trend", "popular", "hot"], "📈"),
+        (["audio", "narration", "audiobook"], "🎧"),
+    ]
+    for keywords, emoji in mapping:
+        for k in keywords:
+            if k in t:
+                return emoji
+    return "🤖"  # default/fallback for AI picks
+
+
 def add_cache_headers(func: Callable[..., FileResponse]):
     def wrapper(v: str):
         file = func()
@@ -352,7 +383,12 @@ async def ai_home_fragment(
                     books = await get_category_books(session, client_session, terms, limit=12)
                 except Exception:
                     books = []
-                ai_sections.append({"title": title, "description": desc, "books": books})
+                ai_sections.append({
+                    "title": title,
+                    "description": desc,
+                    "books": books,
+                    "emoji": pick_category_emoji(title),
+                })
         if ai_sections:
             context["ai_sections"] = ai_sections
             context["ai_picks_title"] = ai_sections[0]["title"]
@@ -438,7 +474,12 @@ async def ai_page_fragment(
                     books = await get_category_books(session, client_session, terms, limit=24)
                 except Exception:
                     books = []
-                sections.append({"title": t, "description": d, "books": books})
+                sections.append({
+                    "title": t,
+                    "description": d,
+                    "books": books,
+                    "emoji": pick_category_emoji(t),
+                })
             if sections:
                 title = sections[0]["title"]
                 description = sections[0]["description"]

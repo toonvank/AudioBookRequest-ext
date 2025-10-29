@@ -24,7 +24,7 @@
         {% if recommendations.for_you %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">✨ For You</h2>
+                <h2 class="text-2xl font-bold">For You</h2>
                 <a href="{{ base_url }}/recommendations/for-you" class="link link-primary">Discover more →</a>
             </div>
             <div class="overflow-x-auto">
@@ -41,11 +41,10 @@
 
     <!-- AI sections load asynchronously to avoid blocking initial render -->
     <div id="ai-home-sections"
-         class="w-full max-w-7xl mb-8 border border-base-300 rounded-box p-6 flex items-center gap-3"
+        class="w-full max-w-7xl mb-8 border border-base-300 rounded-box p-6"
          hx-get="{{ base_url }}/recommendations/ai/home-fragment"
          hx-trigger="load"
          hx-swap="outerHTML">
-        <span class="text-2xl">🤖</span>
         <div>
           <div class="font-semibold">Fetching AI recommendations…</div>
           <div class="opacity-70 text-sm">This runs in the background and will appear here when ready.</div>
@@ -56,7 +55,7 @@
                     {% for sec in recommendations.because_you_read_sections %}
                     <div class="w-full max-w-7xl mb-8">
                         <div class="flex justify-between items-center mb-2">
-                            <h2 class="text-2xl font-bold">📚 {{ sec.title }}</h2>
+                            <h2 class="text-2xl font-bold">{{ sec.title }}</h2>
                         </div>
                         <div class="overflow-x-auto">
                             <div class="flex gap-4 pb-4" style="width: max-content;">
@@ -75,7 +74,7 @@
                     {% for sec in recommendations.authors_you_like_sections %}
                     <div class="w-full max-w-7xl mb-8">
                         <div class="flex justify-between items-center mb-2">
-                            <h2 class="text-2xl font-bold">👤 {{ sec.title }}</h2>
+                            <h2 class="text-2xl font-bold">{{ sec.title }}</h2>
                         </div>
                         <div class="overflow-x-auto">
                             <div class="flex gap-4 pb-4" style="width: max-content;">
@@ -97,7 +96,7 @@
         {% if recommendations.trending %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">📈 Trending This Week</h2>
+                <h2 class="text-2xl font-bold">Trending This Week</h2>
                 <a href="{{ base_url }}/search?q=trending" class="link link-primary">View all →</a>
             </div>
             <div class="overflow-x-auto">
@@ -116,7 +115,7 @@
         {% if recommendations.business %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">💼 Business & Self-Help</h2>
+                <h2 class="text-2xl font-bold">Business & Self-Help</h2>
                 <a href="{{ base_url }}/search?q=business" class="link link-primary">View all →</a>
             </div>
             <div class="overflow-x-auto">
@@ -135,7 +134,7 @@
         {% if recommendations.fiction %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">📖 Fiction & Literature</h2>
+                <h2 class="text-2xl font-bold">Fiction & Literature</h2>
                 <a href="{{ base_url }}/search?q=fiction" class="link link-primary">View all →</a>
             </div>
             <div class="overflow-x-auto">
@@ -154,7 +153,7 @@
         {% if recommendations.biography %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">👤 Biography & History</h2>
+                <h2 class="text-2xl font-bold">Biography & History</h2>
                 <a href="{{ base_url }}/search?q=biography" class="link link-primary">View all →</a>
             </div>
             <div class="overflow-x-auto">
@@ -173,7 +172,7 @@
         {% if recommendations.science %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">🔬 Science & Technology</h2>
+                <h2 class="text-2xl font-bold">Science & Technology</h2>
                 <a href="{{ base_url }}/search?q=science" class="link link-primary">View all →</a>
             </div>
             <div class="overflow-x-auto">
@@ -192,7 +191,7 @@
         {% if recommendations.recent_releases %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">🆕 New Releases</h2>
+                <h2 class="text-2xl font-bold">New Releases</h2>
                 <a href="{{ base_url }}/search?q=new+release" class="link link-primary">View all →</a>
             </div>
             <div class="overflow-x-auto">
@@ -211,7 +210,7 @@
         {% if abs_library and abs_library|length > 0 %}
         <div class="w-full max-w-7xl mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">🎧 In Your Audiobookshelf Library</h2>
+                <h2 class="text-2xl font-bold">In Your Audiobookshelf Library</h2>
                 <a href="{{ base_url }}/settings/audiobookshelf" class="link link-primary">Manage connection →</a>
             </div>
             <div class="overflow-x-auto">
@@ -230,7 +229,7 @@
         {% if not recommendations.popular and not recommendations.recent and not recommendations.for_you and not recommendations.by_popular_authors %}
         <div class="w-full max-w-7xl text-center py-16">
             <div class="flex flex-col items-center gap-4">
-                <div class="text-6xl opacity-20">📚</div>
+                
                 <h3 class="text-2xl font-semibold">No recommendations yet</h3>
                 <p class="text-lg opacity-70 max-w-md">
                     Start by requesting some audiobooks to get personalized recommendations and see what's popular!
